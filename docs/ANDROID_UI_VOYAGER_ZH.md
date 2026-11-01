@@ -1,5 +1,11 @@
 # AndroidWorld：反馈校准 SPECTRUM 与 UI-Voyager 对照
 
+> **2026-11-01 更新：** 当前新增tau衰减与gated两组，使用
+> [四组运行指南](ANDROID_VARIANTS_ZH.md)和
+> [新配置](../configs/android/ui_voyager_qwen4b_variants.json)。
+> 下文双组流程和82项CPU测试是原版本记录；新版本尚待Local测试与原生执行。
+> 模型、设备、作者源码和manifest准备步骤继续适用。
+
 本分支只做 **Qwen3-VL-4B-Instruct + AndroidWorld** 一组实验。
 我们的递归阶段只优化反馈蒸馏 KL，不含 GRSD 或 GRPO。
 对照使用 UI-Voyager 作者发布的 GRSD 分叉点算法。两个方法共享同一个

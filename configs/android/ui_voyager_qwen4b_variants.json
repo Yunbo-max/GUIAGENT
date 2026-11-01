@@ -1,0 +1,110 @@
+{
+  "output_dir": "runs/android/ui_voyager_qwen4b_variants",
+  "manifest": "data/android/private/instances.json",
+  "assets_receipt": "data/android/private/assets.json",
+  "model": {
+    "repo_id": "Qwen/Qwen3-VL-4B-Instruct",
+    "revision": "ebb281ec70b05090aa6165b016eac8ec08e71b17",
+    "checkpoint": null,
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "attn_implementation": "sdpa",
+    "local_files_only": true,
+    "min_pixels": 65536,
+    "max_pixels": 262144,
+    "max_context_tokens": 8192
+  },
+  "android": {
+    "upstream_root": "data/android/UI-Voyager",
+    "console_port": 5554,
+    "grpc_port": 8554,
+    "adb_server_port": 5037,
+    "adb_path": "~/android/platform-tools/adb",
+    "emulator_path": "~/android/emulator/emulator",
+    "avd_name": "AndroidWorldAvd",
+    "android_sdk_root": "~/android",
+    "android_avd_home": "~/.android/avd",
+    "emulator_setup": false,
+    "freeze_datetime": true,
+    "max_steps": 30,
+    "wait_after_action_seconds": 1.5,
+    "history_len": 30
+  },
+  "data": {
+    "train_tasks": "parameterized",
+    "calibration_tasks": "parameterized",
+    "eval_tasks": "all",
+    "train_task_limit": 16,
+    "calibration_task_limit": 16,
+    "split_counts": {
+      "train": 2,
+      "calibration": 1,
+      "eval": 1
+    },
+    "max_param_attempts": 128
+  },
+  "study": {
+    "warmup_rounds": 3,
+    "rounds": 3,
+    "group_size": 4,
+    "spectral_fraction": 0.5,
+    "anchor_repeats": 4,
+    "arms": [
+      "ui_voyager",
+      "feedback_spectrum",
+      "feedback_spectrum_tau",
+      "feedback_spectrum_gated"
+    ]
+  },
+  "generation": {
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "max_new_tokens": 256
+  },
+  "train": {
+    "max_updates": 32,
+    "batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "learning_rate": 1e-05,
+    "lora_rank": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.0,
+    "gradient_checkpointing": true,
+    "max_grad_norm": 1.0,
+    "weight_decay": 0.0,
+    "kl_top_k": 0,
+    "logit_chunk_size": 16
+  },
+  "spectral": {
+    "last_n_layers": 2,
+    "alpha": 0.5,
+    "tau": 1.0,
+    "max_anchor_examples": 16,
+    "max_feedback_examples": 16,
+    "moment_trace_floor": 1e-20,
+    "kl_top_k": 0,
+    "kl_chunk_size": 16
+  },
+  "feedback": {
+    "max_successes": 1,
+    "max_feedback_chars": 6000
+  },
+  "baseline": {
+    "grsd_pairing": "shortest_base",
+    "ssim_threshold": 0.95
+  },
+  "spectral_variants": {
+    "feedback_spectrum": {
+      "tau": 1.0
+    },
+    "feedback_spectrum_tau": {
+      "tau": 1.0,
+      "tau_decay": 0.6
+    },
+    "feedback_spectrum_gated": {
+      "tau": 1.0,
+      "tau_mode": "adaptive",
+      "tau_gamma": 5.0
+    }
+  }
+}

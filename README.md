@@ -2,19 +2,30 @@
 
 **Proximal Spectral Modulation for Looped Self-Distillation**
 
-## Android experiment branch — 28 October 2026
+## Android GUI branch — 1 November 2026
 
-[**AndroidWorld / UI-Voyager 运行指南**](docs/ANDROID_UI_VOYAGER_ZH.md)
-· [Configuration](configs/android/ui_voyager_qwen4b.json)
-· [Validation](docs/ANDROID_VALIDATION_20261028.md)
+[**GUI tau/gated guide / 当前运行指南**](docs/ANDROID_VARIANTS_ZH.md)
+· [Four-arm configuration](configs/android/ui_voyager_qwen4b_variants.json)
+· [Handoff](rounds/20261101-android-variants/WEB_HANDOFF.md)
+· [Original environment and assets](docs/ANDROID_UI_VOYAGER_ZH.md)
 
-This branch adds one Qwen3-VL-4B study: shared RFT initialization, author-code
-GRSD comparison, and our feedback-only recursive spectral self-distillation.
-No GRSD loss is used in our arm. CPU contracts and tiny native visual/LoRA tests
-are distinct from pending full 4B GPU/emulator qualification. Existing studies
-and historical numerical results below are unchanged.
+One Qwen3-VL-4B / AndroidWorld study now supports UI-Voyager GRSD, fixed
+feedback SPECTRUM, SPECTRUM with per-round tau decay 0.6, and spectral-entropy-gated
+SPECTRUM (gamma 5). All share three RFT rounds, then run three refinement rounds
+per arm. The three SPECTRUM arms keep the same feedback-only KL objective.
 
-## Current experiment entry — 27 October 2026
+The new config uses a fresh result root and `run --arm all`; `both` retains the
+original two-arm meaning. The original config/results remain unchanged. This port
+reuses the existing main-branch tau/gated definitions, with receipt-bound adaptive
+reference state. A gate can increase tau; it is not guaranteed collapse prevention.
+
+This revision is **generated_unexecuted**: source/static review and authored tests
+are separate from pending Local tests and real 4B/CUDA/emulator qualification.
+The [older 82 CPU passes](docs/ANDROID_REVIEW_20261029.md) do not certify this port.
+Non-GUI studies below are this branch's historical snapshot; current main has
+separate updates and is not modified by the GUI delivery.
+
+## Historical non-GUI experiment entry — 27 October 2026
 
 [**Run the current study / 当前运行指南**](LOCAL_AGENT_RUNBOOK.md)
 · [Web → Local handoff](rounds/20261027-multidomain/WEB_HANDOFF.md)

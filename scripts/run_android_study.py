@@ -17,16 +17,26 @@ def main():
     fetch.add_argument("--source-only", action="store_true")
     sub.add_parser("prepare")
     sub.add_parser("setup-env")
-    sub.add_parser("qualify")
+    qualify = sub.add_parser("qualify")
+    qualify.add_argument("--arm", choices=["feedback_spectrum", "feedback_spectrum_tau", "feedback_spectrum_gated"],
+                         default="feedback_spectrum")
     sub.add_parser("warmup")
     run = sub.add_parser("run")
-    run.add_argument("--arm", choices=["both", "ui_voyager", "feedback_spectrum"], default="both")
+    run.add_argument("--arm", choices=["both", "all", "ui_voyager", "feedback_spectrum",
+                                       "feedback_spectrum_tau", "feedback_spectrum_gated"], default="both")
     sub.add_parser("report")
     args = parser.parse_args()
-    from improving.android.study import load_config, run_study, report
+    from improving.android.study import FEEDBACK_ARMS, arm_config, configured_arms, load_config, run_study, report
     config = load_config(args.config)
     if args.command == "plan":
-        result = {"model": config["model"]["repo_id"], "arms": ["ui_voyager", "feedback_spectrum"],
+        tau_policies = {}
+        for arm in configured_arms(config):
+            if arm in FEEDBACK_ARMS:
+                spectral = arm_config(config, arm)["spectral"]
+                tau_policies[arm] = {"tau": spectral.get("tau", 1.), "tau_decay": spectral.get("tau_decay"),
+                                     "tau_mode": spectral.get("tau_mode"), "tau_gamma": spectral.get("tau_gamma", 5.)}
+        result = {"model": config["model"]["repo_id"], "arms": list(configured_arms(config)),
+                  "tau_policies": tau_policies,
                   "shared_rft_rounds": config["study"]["warmup_rounds"], "refinement_rounds": config["study"]["rounds"],
                   "rollouts_per_train_instance_per_round": config["study"]["group_size"],
                   "output_dir": config["output_dir"], "data": config["data"],
@@ -55,9 +65,9 @@ def main():
         result = {"status": "native_environment_setup_complete"}
     elif args.command == "qualify":
         from improving.android.qualification import qualify
-        result = qualify(config)
+        result = qualify(config, args.arm)
     else:
-        result = run_study(config, getattr(args, "arm", "both"), warmup_only=args.command == "warmup")
+        result = run_study(config, getattr(args, "arm", "all"), warmup_only=args.command == "warmup")
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 

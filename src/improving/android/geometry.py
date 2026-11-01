@@ -20,12 +20,37 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 from improving.spectral import (
+    _covariance_eigh,
     _native_linear,
     decoder_attention_layout,
     folded_operators,
     make_operator,
     target_modules,
 )
+from .tau import resolve_tau, validate_tau_settings
+
+
+def normalized_spectral_entropy(anchor_records: Mapping[str, Mapping[str, Any]]) -> float | None:
+    """Historical mean entropy, normalized by strictly positive spectral rank.
+
+    This intentionally follows the main-branch gate: rank-one projections are
+    skipped, and entropy is normalized by log(positive rank), not log(width).
+    Thus uniform rank-two and uniform full-rank spectra both have entropy one;
+    this is not an effective-rank or correct-trajectory diversity measure.
+    No usable rank-two-or-higher projection returns None and blocks the gate.
+    Zero or invalid moments are rejected earlier by the covariance validator.
+    """
+    entropies = []
+    for record in anchor_records.values():
+        _, eigenvalues, _ = _covariance_eigh(record["covariance"])
+        positive = eigenvalues[eigenvalues > 0]
+        if len(positive) < 2:
+            continue
+        probabilities = positive / positive.sum()
+        probabilities = probabilities[probabilities > 0]
+        entropy = -float((probabilities * probabilities.log()).sum())
+        entropies.append(entropy / math.log(len(positive)))
+    return sum(entropies) / len(entropies) if entropies else None
 
 
 def mix_moments(
@@ -303,6 +328,9 @@ def collect_operators(
     feedback_examples: Iterable[Mapping[str, Any]],
     config: Mapping[str, Any],
     output_dir: str | Path,
+    *,
+    round_index: int = 1,
+    reference_entropy: float | None = None,
 ) -> tuple[dict[str, Tensor], dict[str, Any]]:
     """Recompute visual anchor and feedback moments at one native checkpoint.
 
@@ -314,6 +342,7 @@ def collect_operators(
     spectral = config.get("spectral", config)
     if not isinstance(spectral, Mapping):
         raise ValueError("spectral configuration must be a mapping")
+    validate_tau_settings(spectral)
     destination = Path(output_dir)
     tensor_path = destination / "operators.pt"
     receipt_path = destination / "calibration.json"
@@ -325,6 +354,12 @@ def collect_operators(
     if not anchors:
         raise ValueError("spectral collection needs real successful fixed calibration references")
     anchor_records = _collect_moments(policy, anchors, names, "anchor", spectral)
+    # Match the older code gate's reference-NLL signal. Feedback changes the
+    # operator geometry below, but not the population used to measure entropy.
+    entropy = (normalized_spectral_entropy(anchor_records)
+               if spectral.get("tau_mode") == "adaptive" else None)
+    tau_policy = resolve_tau(spectral, round_index, entropy=entropy,
+                             reference_entropy=reference_entropy)
     alpha = float(spectral.get("alpha", 0.5))
     if not math.isfinite(alpha) or not 0 <= alpha <= 1:
         raise ValueError("spectral alpha must be finite and in [0, 1]")
@@ -338,7 +373,7 @@ def collect_operators(
             alpha=alpha,
             trace_floor=float(spectral.get("moment_trace_floor", 1e-20)),
         )
-        operator = make_operator(mixed, kind="spectral_soft", tau=float(spectral.get("tau", 1.0)))
+        operator = make_operator(mixed, kind="spectral_soft", tau=tau_policy["effective_tau"])
         operators[name] = operator
         detail.update({
             "anchor_examples": anchor_records[name]["example_count"],
@@ -360,7 +395,10 @@ def collect_operators(
         "operator_lifetime": "generation_only; restore before training and evaluation",
         "anchor_examples_sha256": _fingerprint(anchors),
         "feedback_examples_sha256": _fingerprint(feedback if feedback_records else []),
-        "tau": float(spectral.get("tau", 1.0)),
+        "tau": tau_policy["effective_tau"],
+        "tau_policy": tau_policy,
+        "tau_entropy_source": "current_checkpoint_fixed_anchor_reference_nll_moments_only",
+        "tau_entropy_definition": "mean projection entropy -sum(p*log(p))/log(strictly_positive_eigenvalue_count); rank<2 projections skipped; not effective rank",
         "targets": details,
     }
     destination.mkdir(parents=True, exist_ok=True)
@@ -371,4 +409,5 @@ def collect_operators(
     return operators, receipt
 
 
-__all__ = ["collect_operators", "mix_moments", "select_targets", "folded_operators"]
+__all__ = ["collect_operators", "mix_moments", "select_targets", "folded_operators",
+           "normalized_spectral_entropy"]

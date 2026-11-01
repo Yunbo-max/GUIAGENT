@@ -16,8 +16,72 @@ import sys
 import time
 
 from .assets import atomic_json, file_sha256, resolve_checkpoint, verify_upstream
+from .tau import resolve_tau, validate_tau_settings
 
-ARMS = ("ui_voyager", "feedback_spectrum")
+LEGACY_ARMS = ("ui_voyager", "feedback_spectrum")
+ARMS = LEGACY_ARMS + ("feedback_spectrum_tau", "feedback_spectrum_gated")
+FEEDBACK_ARMS = ARMS[1:]
+TAU_KEYS = frozenset(("tau", "tau_decay", "tau_mode", "tau_gamma"))
+VARIANT_DEFAULTS = {
+    "feedback_spectrum_tau": {"tau_decay": .6, "tau_mode": None},
+    "feedback_spectrum_gated": {"tau_decay": None, "tau_mode": "adaptive", "tau_gamma": 5.},
+}
+
+
+def configured_arms(config: dict) -> tuple[str, ...]:
+    """Resolve the declared comparison without importing a model or touching disk."""
+    arms = config["study"].get("arms", LEGACY_ARMS)
+    if (not isinstance(arms, (list, tuple)) or not arms
+            or any(not isinstance(arm, str) or arm not in ARMS for arm in arms)
+            or len(set(arms)) != len(arms)):
+        raise ValueError("study.arms must be a nonempty list of distinct supported arms")
+    return tuple(arms)
+
+
+def selected_arms(config: dict, selection: str) -> tuple[str, ...]:
+    """Keep 'both' backward compatible; 'all' means all configured arms."""
+    available = configured_arms(config)
+    requested = available if selection == "all" else LEGACY_ARMS if selection == "both" else (selection,)
+    for arm in requested:
+        if arm not in ARMS:
+            raise ValueError(f"Unknown arm {arm}")
+        if arm not in available:
+            raise ValueError(f"Arm {arm} is not configured in study.arms")
+    return requested
+
+
+def arm_config(config: dict, arm: str) -> dict:
+    """Isolate only tau-policy controls; all other experiment settings are shared."""
+    selected_arms(config, arm)
+    variants = config.get("spectral_variants", {})
+    if not isinstance(variants, dict):
+        raise ValueError("spectral_variants must be an object")
+    for name, override in variants.items():
+        if name not in FEEDBACK_ARMS or name not in configured_arms(config):
+            raise ValueError(f"Unconfigured spectral variant {name}")
+        if not isinstance(override, dict) or set(override) - TAU_KEYS:
+            raise ValueError(f"spectral_variants.{name} may only override {sorted(TAU_KEYS)}")
+    result = deepcopy(config)
+    if arm in FEEDBACK_ARMS:
+        result["spectral"].update(VARIANT_DEFAULTS.get(arm, {}))
+        result["spectral"].update(variants.get(arm, {}))
+    validate_tau_settings(result["spectral"])
+    return result
+
+
+def validate_geometry_tau(receipt: dict, spectral: dict, round_index: int,
+                          reference_entropy: float | None = None) -> dict:
+    """Check persisted policy against this arm and its frozen round-one reference."""
+    policy = receipt.get("tau_policy")
+    if not isinstance(policy, dict):
+        raise ValueError("Geometry receipt has no tau_policy")
+    expected = resolve_tau(spectral, round_index, entropy=policy.get("entropy"),
+                           reference_entropy=reference_entropy)
+    if any(key not in policy or policy[key] != value for key, value in expected.items()):
+        raise ValueError("Geometry tau policy disagrees with arm, round, or frozen reference entropy")
+    if receipt.get("tau") != expected["effective_tau"]:
+        raise ValueError("Geometry effective tau disagrees with tau_policy")
+    return expected
 
 
 def digest(value) -> str:
@@ -40,8 +104,9 @@ def validate_config(config: dict) -> None:
         raise ValueError("warmup_rounds must be a nonnegative integer")
     if not 0 <= config["spectral"].get("alpha", .5) <= 1:
         raise ValueError("spectral.alpha must lie in [0,1]")
-    if config["spectral"].get("tau", 1.) < 0:
-        raise ValueError("spectral.tau must be nonnegative")
+    validate_tau_settings(config["spectral"])
+    for arm in configured_arms(config):
+        arm_config(config, arm)
 
 
 def load_config(path: str | Path) -> dict:
@@ -345,6 +410,7 @@ def _train(checkpoint: str, examples: list[dict], path: Path, config: dict, kind
 
 def run_study(config: dict, arm: str = "both", *, warmup_only: bool = False) -> dict:
     validate_config(config)
+    methods = selected_arms(config, arm)
     verify_upstream(config["android"]["upstream_root"])
     manifest = load_manifest(config["manifest"])
     train_instances, eval_instances = _instances(manifest, "train"), _instances(manifest, "eval")
@@ -368,13 +434,13 @@ def run_study(config: dict, arm: str = "both", *, warmup_only: bool = False) -> 
             return {"status": "warmup_complete", "checkpoint": checkpoint}
         _collect(checkpoint, eval_instances, root / "shared" / "evaluation", config, 1)
         shared_checkpoint = checkpoint
-        for method in (ARMS if arm == "both" else (arm,)):
-            if method not in ARMS:
-                raise ValueError(f"Unknown arm {method}")
+        anchors: list[dict] | None = None
+        for method in methods:
+            settings = arm_config(config, method)
             checkpoint = shared_checkpoint
             previous_feedback: list[dict] = []
-            anchors: list[dict] = []
-            if method == "feedback_spectrum":
+            reference_entropy: float | None = None
+            if method in FEEDBACK_ARMS and anchors is None:
                 calibration = _collect(shared_checkpoint, _instances(manifest, "calibration"),
                                        root / "shared" / "anchor_collection", config,
                                        config["study"].get("anchor_repeats", group_size))
@@ -382,24 +448,27 @@ def run_study(config: dict, arm: str = "both", *, warmup_only: bool = False) -> 
                 if not anchors:
                     raise RuntimeError("No native verified calibration success; spectral arm cannot fabricate its anchor")
                 random.Random(stage_config(config, "fixed_anchor_order")["runtime_seed"]).shuffle(anchors)
-            for r in range(1, config["study"]["rounds"] + 1):
+            for r in range(1, settings["study"]["rounds"] + 1):
                 stage = root / method / f"round_{r:02d}"
+                tau_policy = None
                 if method == "ui_voyager":
-                    episodes = _collect(checkpoint, train_instances, stage / "collect", config, group_size, round_index=r)
+                    episodes = _collect(checkpoint, train_instances, stage / "collect", settings, group_size, round_index=r)
                     from .baseline import build_grsd_examples
-                    examples, evidence = build_grsd_examples(episodes, config["android"]["upstream_root"], config)
+                    examples, evidence = build_grsd_examples(episodes, settings["android"]["upstream_root"], settings)
                     atomic_json(stage / "supervision.json", evidence)
-                    checkpoint = _train(checkpoint, examples, stage / "train", config, "grsd")
+                    checkpoint = _train(checkpoint, examples, stage / "train", settings, "grsd")
                 else:
                     from .model import QwenPolicy
                     from .geometry import collect_operators
-                    policy = QwenPolicy(checkpoint, config)
+                    policy = QwenPolicy(checkpoint, settings)
                     try:
                         geometry = stage / "geometry"
                         completed = read_complete_stage(geometry)
                         if completed is None:
                             calibration_started = time.monotonic()
-                            operators, receipt = collect_operators(policy, anchors, previous_feedback, config, geometry)
+                            operators, receipt = collect_operators(policy, anchors, previous_feedback, settings, geometry,
+                                                                   round_index=r, reference_entropy=reference_entropy)
+                            tau_policy = validate_geometry_tau(receipt, settings["spectral"], r, reference_entropy)
                             _finish(geometry, {"checkpoint": checkpoint, "calibration": receipt,
                                                "elapsed_seconds": time.monotonic() - calibration_started},
                                     ["operators.pt", "calibration.json"],
@@ -407,27 +476,38 @@ def run_study(config: dict, arm: str = "both", *, warmup_only: bool = False) -> 
                         else:
                             if completed["checkpoint"] != checkpoint:
                                 raise ValueError("Geometry checkpoint mismatch")
+                            if not {"operators.pt", "calibration.json"}.issubset(completed.get("artifacts", {})):
+                                raise ValueError("Geometry receipt must hash operators.pt and calibration.json")
+                            receipt = json.loads((geometry / "calibration.json").read_text())
+                            if receipt != completed["calibration"]:
+                                raise ValueError("Geometry calibration receipt mismatch")
+                            tau_policy = validate_geometry_tau(receipt, settings["spectral"], r, reference_entropy)
                             operators = load_operators(geometry / "operators.pt")
-                        native = _collect(checkpoint, train_instances, stage / "collect_native", config, group_size // 2,
+                        if r == 1 and tau_policy["mode"] == "adaptive":
+                            reference_entropy = tau_policy["reference_entropy"]
+                        native = _collect(checkpoint, train_instances, stage / "collect_native", settings, group_size // 2,
                                           round_index=r, policy=policy)
-                        spectral = _collect(checkpoint, train_instances, stage / "collect_spectral", config, group_size // 2,
+                        spectral = _collect(checkpoint, train_instances, stage / "collect_spectral", settings, group_size // 2,
                                             round_index=r, policy_name="spectral", policy=policy, operators=operators)
                     finally:
                         policy.close()
-                    examples, evidence = feedback_examples(native + spectral, config)
+                    examples, evidence = feedback_examples(native + spectral, settings)
                     atomic_json(stage / "supervision.json", evidence)
-                    checkpoint = _train(checkpoint, examples, stage / "train", config, "feedback")
+                    checkpoint = _train(checkpoint, examples, stage / "train", settings, "feedback")
                     previous_feedback = examples
-                _collect(checkpoint, eval_instances, stage / "evaluation", config, 1, round_index=r)
-                atomic_json(stage / "round.json", {"arm": method, "round": r, "checkpoint": checkpoint})
+                _collect(checkpoint, eval_instances, stage / "evaluation", settings, 1, round_index=r)
+                atomic_json(stage / "round.json", {"arm": method, "round": r, "checkpoint": checkpoint,
+                                                   "tau_policy": tau_policy})
         return report(config)
 
 
 def report(config: dict) -> dict:
+    validate_config(config)
+    arms = configured_arms(config)
     root = Path(config["output_dir"])
     rows = []
     for path in [root / "shared" / "evaluation"] + [root / arm / f"round_{r:02d}" / "evaluation"
-                                                    for arm in ARMS for r in range(1, config["study"]["rounds"] + 1)]:
+                                                    for arm in arms for r in range(1, config["study"]["rounds"] + 1)]:
         marker = path / "complete.json"
         if marker.is_file():
             value = read_complete_stage(path)
@@ -435,7 +515,7 @@ def report(config: dict) -> dict:
         else:
             rows.append({"stage": str(path.relative_to(root)), "status": "incomplete" if path.exists() else "not_run"})
     costs = {}
-    cost_roots = {"shared": root / "shared", **{arm: root / arm for arm in ARMS},
+    cost_roots = {"shared": root / "shared", **{arm: root / arm for arm in arms},
                   "spectral_reference_acquisition": root / "shared" / "anchor_collection"}
     for category, cost_root in cost_roots.items():
         total = {"collection_episodes": 0, "environment_steps": 0, "generated_response_tokens": 0,
@@ -461,7 +541,37 @@ def report(config: dict) -> dict:
             if "calibration" in value:
                 total["calibration_seconds"] += value.get("elapsed_seconds", 0.)
         costs[category] = total
-    result = {"protocol": "controlled_ui_voyager_comparison", "evaluations": rows, "costs": costs,
+    tau_history = []
+    for arm in arms:
+        if arm not in FEEDBACK_ARMS:
+            continue
+        settings = arm_config(config, arm)
+        reference_entropy = None
+        for r in range(1, config["study"]["rounds"] + 1):
+            path = root / arm / f"round_{r:02d}" / "geometry"
+            entry = {"arm": arm, "round": r}
+            if not (path / "complete.json").is_file():
+                entry["status"] = "incomplete" if path.exists() else "not_run"
+            else:
+                value = read_complete_stage(path)
+                receipt = value["calibration"]
+                if ("tau_policy" not in receipt and arm == "feedback_spectrum"
+                        and settings["spectral"].get("tau_mode") is None
+                        and settings["spectral"].get("tau_decay") is None):
+                    # Older fixed-arm receipts did not record entropy or scheduling.
+                    entry.update(status="legacy_receipt", effective_tau=receipt.get("tau"))
+                else:
+                    if not {"operators.pt", "calibration.json"}.issubset(value.get("artifacts", {})):
+                        raise ValueError("Geometry receipt must hash operators.pt and calibration.json")
+                    if receipt != json.loads((path / "calibration.json").read_text()):
+                        raise ValueError("Geometry calibration receipt mismatch")
+                    policy = validate_geometry_tau(receipt, settings["spectral"], r, reference_entropy)
+                    if r == 1 and policy["mode"] == "adaptive":
+                        reference_entropy = policy["reference_entropy"]
+                    entry.update(status="complete", **policy)
+            tau_history.append(entry)
+    result = {"protocol": "controlled_ui_voyager_comparison", "arms": list(arms),
+              "evaluations": rows, "costs": costs, "tau_history": tau_history,
               "budget_note": "Refinement rollout attempts and available optimizer updates are matched. Actual actions/tokens/FLOPs are not matched. shared/anchor_collection is additional spectral-reference acquisition; it is not used by GRSD. Calibration/teacher costs must be reported separately.",
               "note": "One training trajectory per arm; no statistical claim of replicated training runs. Missing cells remain missing."}
     if root.exists():

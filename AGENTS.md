@@ -3,8 +3,13 @@
 ## This branch: Android experiment
 
 For `android-feedback-spectrum`, use [the Android runbook](docs/ANDROID_UI_VOYAGER_ZH.md)
-and [latest review evidence](docs/ANDROID_REVIEW_20261029.md). Scope: one Qwen3-VL-4B
-AndroidWorld study; shared RFT, UI-Voyager GRSD baseline, feedback-only spectral arm.
+and [current tau/gated handoff](rounds/20261101-android-variants/WEB_HANDOFF.md),
+then [variant commands and semantics](docs/ANDROID_VARIANTS_ZH.md). Scope: one Qwen3-VL-4B
+AndroidWorld study; shared RFT, UI-Voyager GRSD, fixed/decayed/gated feedback-only arms.
+New four-arm config uses a fresh output root; legacy both remains the old pair.
+The latest integration is generated_unexecuted; [older review evidence](docs/ANDROID_REVIEW_20261029.md)
+belongs to its original revision, not this port. Gate reference entropy is per arm
+and bound to completed first-refinement geometry; do not reset it during resume.
 Preserve old experiments and results. CPU tests/tiny models do not qualify real4B
 CUDA or emulator runs. Native-only Android setup, immutable upstream/model pins,
 private parameter manifests, real verifier, no fabricated reference trajectories.
