@@ -1,0 +1,84 @@
+{
+  "output_dir": "runs/mobilegym/feedback_only_learned_v1",
+  "mobilegym": {
+    "root": "external/mobilegym",
+    "url": "http://localhost:4173",
+    "pinned_commit": "5fbd3f34be0e9780ae4b1e9d5089963ddbd05d38",
+    "delay_after_action": 0.2
+  },
+  "model": {
+    "checkpoint": "models/qwen3-vl-4b-instruct",
+    "repo_id": "Qwen/Qwen3-VL-4B-Instruct",
+    "revision": "ebb281ec70b05090aa6165b016eac8ec08e71b17",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "attn_implementation": "sdpa",
+    "local_files_only": true,
+    "min_pixels": 65536,
+    "max_pixels": 262144,
+    "max_context_tokens": 8192
+  },
+  "study": {
+    "seed": 11,
+    "train_task_limit": 32,
+    "test_task_limit": 256,
+    "round0_repeats": 4,
+    "group_size": 4,
+    "rounds": 3,
+    "max_steps": 30,
+    "history_len": 30,
+    "arms": [
+      "feedback_sd",
+      "feedback_spectrum_fixed",
+      "feedback_spectrum_learned"
+    ]
+  },
+  "generation": {
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "top_k": 20,
+    "max_new_tokens": 256
+  },
+  "train": {
+    "max_updates": 32,
+    "batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "learning_rate": 0.00001,
+    "lora_rank": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0,
+    "gradient_checkpointing": true,
+    "max_grad_norm": 1,
+    "weight_decay": 0,
+    "kl_top_k": 0,
+    "logit_chunk_size": 16
+  },
+  "spectral": {
+    "geometry_source": "feedback_only",
+    "last_n_layers": 2,
+    "alpha": 0,
+    "tau": 1,
+    "max_feedback_examples": 16,
+    "max_anchor_examples": 16,
+    "moment_trace_floor": 1e-20,
+    "kl_top_k": 0,
+    "kl_chunk_size": 16
+  },
+  "gain_learning": {
+    "max_steps": 8,
+    "learning_rate": 0.1,
+    "min_gain": 0.1,
+    "kl_budget": 0.02,
+    "max_backtracks": 8,
+    "backtrack_factor": 0.5,
+    "min_improvement": 0.000001,
+    "guard_tolerance": 0,
+    "degeneracy_rtol": 1e-7,
+    "degeneracy_atol": 1e-12,
+    "kl_chunk_tokens": 16
+  },
+  "feedback": {
+    "max_successes": 1,
+    "max_feedback_chars": 6000
+  }
+}
