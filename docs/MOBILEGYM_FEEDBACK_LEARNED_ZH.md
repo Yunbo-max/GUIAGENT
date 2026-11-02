@@ -68,6 +68,7 @@ These are planning allowances, not measured peaks.
 
 From the SPECTRUM repository root:
 
+    mkdir -p external
     git clone https://github.com/Purewhiter/mobilegym.git external/mobilegym
     git -C external/mobilegym checkout 5fbd3f34be0e9780ae4b1e9d5089963ddbd05d38
     cd external/mobilegym
@@ -93,6 +94,12 @@ absolute directory before running. The code does not download the model.
 Run CPU unit checks first:
 
     python -m pytest tests/test_mobilegym_feedback.py tests/test_android_geometry.py tests/test_android_variants.py -q
+
+A separate browser environment check is available before GPU work:
+
+    python scripts/run_mobilegym_feedback.py --config configs/mobilegym/feedback_only_qwen4b_learned.json env-check
+
+This is not a task-success score. Start MobileGym preview first.
 
 Plan checks source revision and official split IDs but loads NO model:
 

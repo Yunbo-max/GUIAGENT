@@ -134,6 +134,40 @@ def plan(cfg: dict) -> dict:
     }
 
 
+async def _environment_probe_async(cfg: dict) -> dict:
+    """Read one official task screenshot/state without loading Qwen or training."""
+    from bench_env.env.mobile_gym import MobileGymEnv
+    from bench_env.runner.base import Controller
+    from bench_env.env.base import Action
+    env = MobileGymEnv(
+        url=cfg["mobilegym"]["url"], headless=True, verbose=False,
+        coord_space="norm_0_1000", delay_after_action=0.05)
+    task = _fresh_task(_tasks(cfg, "train")[0])
+    await env.start()
+    try:
+        obs, _ = await Controller.setup(env, task, eval_mode="grounded")
+        image = obs.get_screenshot_bytes()
+        if not image:
+            raise RuntimeError("MobileGym env-check received an empty screenshot")
+        state = await env.get_state()
+        if not isinstance(state, dict) or not state:
+            raise RuntimeError("MobileGym env-check received no state for verifier")
+        action = await env.step(Action.wait(0.01))
+        if not action.observation.get_screenshot_bytes():
+            raise RuntimeError("MobileGym env-check failed to observe post-action screen")
+        return {"status": "env_check_passed", "task_id": task.id,
+                "screenshot_bytes": len(image), "state_keys": sorted(state),
+                "gpu_loaded": False, "benchmark_score": None}
+    finally:
+        task.teardown(env)
+        await env.close()
+
+
+def environment_probe(cfg: dict) -> dict:
+    plan(cfg)
+    return asyncio.run(_environment_probe_async(cfg))
+
+
 def _fresh_task(proto):
     task = type(proto)(_seed=proto._seed)
     task._template_index = getattr(proto, "_template_index", None)
@@ -403,10 +437,12 @@ def run(cfg: dict) -> dict:
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--config", required=True)
-    p.add_argument("command", choices=("plan", "run"))
+    p.add_argument("command", choices=("plan", "env-check", "run"))
     args = p.parse_args()
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
-    output = plan(cfg) if args.command == "plan" else run(cfg)
+    output = (plan(cfg) if args.command == "plan"
+              else environment_probe(cfg) if args.command == "env-check"
+              else run(cfg))
     print(json.dumps(output, indent=2, ensure_ascii=False))
 
 

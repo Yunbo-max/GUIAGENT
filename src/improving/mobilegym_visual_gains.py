@@ -128,11 +128,7 @@ def fit_visual_feedback_gains(policy, feedback_rows, moment_records, settings=No
     native sampled response IDs but omit hindsight. No extra teacher network.
     """
     cfg = validate_gain_settings(settings or {})
-    fit, guard = split_by_task(
-        feedback_rows, fit_limit=int((settings or {}).get("fit_examples", 8))
-        if "fit_examples" in (settings or {}) else 8,
-        guard_limit=int((settings or {}).get("guard_examples", 4))
-        if "guard_examples" in (settings or {}) else 4)
+    fit, guard = split_by_task(feedback_rows, fit_limit=8, guard_limit=4)
     if not isinstance(moment_records, dict) or not moment_records:
         raise ValueError("Missing feedback-only gradient covariance")
     model = policy.model
