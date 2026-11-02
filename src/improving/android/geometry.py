@@ -349,30 +349,52 @@ def collect_operators(
     if tensor_path.exists() or receipt_path.exists():
         raise FileExistsError("calibration output already exists; use a new round/output directory")
     names = select_targets(policy.model, spectral)
+    source = spectral.get("geometry_source", "anchor_feedback")
+    if source not in ("anchor_feedback", "feedback_only"):
+        raise ValueError("spectral.geometry_source must be anchor_feedback or feedback_only")
     anchors = _limited(anchor_examples, spectral.get("max_anchor_examples", 16), "max_anchor_examples")
     feedback = _limited(feedback_examples, spectral.get("max_feedback_examples", 16), "max_feedback_examples")
-    if not anchors:
-        raise ValueError("spectral collection needs real successful fixed calibration references")
-    anchor_records = _collect_moments(policy, anchors, names, "anchor", spectral)
-    # Match the older code gate's reference-NLL signal. Feedback changes the
-    # operator geometry below, but not the population used to measure entropy.
-    entropy = (normalized_spectral_entropy(anchor_records)
-               if spectral.get("tau_mode") == "adaptive" else None)
-    tau_policy = resolve_tau(spectral, round_index, entropy=entropy,
-                             reference_entropy=reference_entropy)
     alpha = float(spectral.get("alpha", 0.5))
     if not math.isfinite(alpha) or not 0 <= alpha <= 1:
         raise ValueError("spectral alpha must be finite and in [0, 1]")
-    feedback_records = _collect_moments(policy, feedback, names, "feedback", spectral) if feedback and alpha else {}
+    trace_floor = float(spectral.get("moment_trace_floor", 1e-20))
+    if source == "feedback_only":
+        if anchors:
+            raise ValueError("Feedback-only geometry must not use calibration answers")
+        if not feedback:
+            raise ValueError("signal_shortage: feedback-only geometry requires real training feedback")
+        anchor_records = {}
+        feedback_records = _collect_moments(policy, feedback, names, "feedback", spectral)
+        entropy_records = feedback_records
+    else:
+        if not anchors:
+            raise ValueError("spectral collection needs real successful fixed calibration references")
+        anchor_records = _collect_moments(policy, anchors, names, "anchor", spectral)
+        feedback_records = _collect_moments(policy, feedback, names, "feedback", spectral) if feedback and alpha else {}
+        entropy_records = anchor_records
+    entropy = (normalized_spectral_entropy(entropy_records)
+               if spectral.get("tau_mode") == "adaptive" else None)
+    tau_policy = resolve_tau(spectral, round_index, entropy=entropy,
+                             reference_entropy=reference_entropy)
     operators = {}
     details = {}
     for name in names:
-        mixed, detail = mix_moments(
-            anchor_records[name]["covariance"],
-            feedback_records.get(name, {}).get("covariance"),
-            alpha=alpha,
-            trace_floor=float(spectral.get("moment_trace_floor", 1e-20)),
-        )
+        if source == "feedback_only":
+            mixed, detail = mix_moments(
+                feedback_records[name]["covariance"], None,
+                alpha=0.0, trace_floor=trace_floor)
+            detail.update({
+                "anchor_trace": None,
+                "feedback_trace": float(feedback_records[name]["covariance"].trace()),
+                "requested_alpha": 1.0, "effective_alpha": 1.0,
+                "fallback_reason": None,
+            })
+        else:
+            mixed, detail = mix_moments(
+                anchor_records[name]["covariance"],
+                feedback_records.get(name, {}).get("covariance"),
+                alpha=alpha, trace_floor=trace_floor)
+        detail["geometry_source"] = source
         operator = make_operator(mixed, kind="spectral_soft", tau=tau_policy["effective_tau"])
         operators[name] = operator
         detail.update({
@@ -389,6 +411,7 @@ def collect_operators(
     receipt = {
         "schema_version": 1,
         "method": "feedback_calibrated_spectrum",
+        "geometry_source": source,
         "checkpoint": str(getattr(policy, "checkpoint", "unknown")),
         "moment_definition": "per-example mean response loss; uncentered K/V activation-gradient second moment over all nonpadding positions",
         "visual_inputs": "native pixel_values and image_grid_thw; no text-only embedding bypass",
@@ -397,7 +420,9 @@ def collect_operators(
         "feedback_examples_sha256": _fingerprint(feedback if feedback_records else []),
         "tau": tau_policy["effective_tau"],
         "tau_policy": tau_policy,
-        "tau_entropy_source": "current_checkpoint_fixed_anchor_reference_nll_moments_only",
+        "tau_entropy_source": ("current_checkpoint_training_feedback_kl_moments_only"
+                               if source == "feedback_only"
+                               else "current_checkpoint_fixed_anchor_reference_nll_moments_only"),
         "tau_entropy_definition": "mean projection entropy -sum(p*log(p))/log(strictly_positive_eigenvalue_count); rank<2 projections skipped; not effective rank",
         "targets": details,
     }
