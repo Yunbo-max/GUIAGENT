@@ -1,5 +1,18 @@
 # SPECTRUM
 
+## MobileGym learned-feedback spectrum (new opt-in study)
+
+[Execution guide](docs/MOBILEGYM_FEEDBACK_LEARNED_ZH.md) ·
+[Config](configs/mobilegym/feedback_only_qwen4b_learned.json) ·
+[Entry](scripts/run_mobilegym_feedback.py)
+
+This adds a shared native Round 0, feedback-only visual K/V gradient geometry,
+and the latest full-spectrum learned gains adapted to multimodal feedback KL.
+The comparison includes matched Feedback SD (no spectrum) and fixed spectrum.
+It is **code delivered, not GPU or native MobileGym benchmark tested**.
+Legacy AndroidWorld/UI-Voyager results and configs are unchanged.
+
+
 **Proximal Spectral Modulation for Looped Self-Distillation**
 
 ## Android GUI branch — 1 November 2026
