@@ -397,10 +397,11 @@ def collect_operators(
         detail["geometry_source"] = source
         operator = make_operator(mixed, kind="spectral_soft", tau=tau_policy["effective_tau"])
         operators[name] = operator
+        anchor = anchor_records.get(name, {})
         detail.update({
-            "anchor_examples": anchor_records[name]["example_count"],
-            "anchor_nonpadding_positions": anchor_records[name]["token_count"],
-            "anchor_target_tokens": anchor_records[name]["target_token_count"],
+            "anchor_examples": anchor.get("example_count", 0),
+            "anchor_nonpadding_positions": anchor.get("token_count", 0),
+            "anchor_target_tokens": anchor.get("target_token_count", 0),
             "feedback_examples": feedback_records.get(name, {}).get("example_count", 0),
             "feedback_nonpadding_positions": feedback_records.get(name, {}).get("token_count", 0),
             "feedback_target_tokens": feedback_records.get(name, {}).get("target_token_count", 0),

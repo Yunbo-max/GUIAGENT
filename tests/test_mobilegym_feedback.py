@@ -99,7 +99,7 @@ def test_exploration_contract_and_independent_schedules():
 
 def test_feedback_only_covariance_matches_feedback_moment(tmp_path):
     # Same tiny visual contract fixture used by the existing AndroidWorld tests.
-    from test_android_geometry import _Policy, _example
+    from tests.test_android_geometry import _Policy, _example
     from improving.android.geometry import collect_operators
     model = _Policy()
     feedback = _example("train", instance_id="train_t1")

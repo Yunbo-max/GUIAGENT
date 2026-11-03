@@ -88,6 +88,9 @@ def parse_mobile_action(response: str, width: int, height: int) -> dict[str, Any
     if action == "swipe":
         x, y = _coordinate(args.get("coordinate"), width, height)
         x2, y2 = _coordinate(args.get("coordinate2"), width, height)
+        # Swipe endpoints are exclusive in the native action interface: the
+        # destination coordinate maps to one pixel short of the requested point.
+        x2, y2 = max(0, x2 - 1), max(0, y2 - 1)
         return {"action_type": "swipe", "x": x, "y": y, "x_": x2, "y_": y2}
     if action in ("type", "answer"):
         if not isinstance(args.get("text"), str):
