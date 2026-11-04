@@ -40,7 +40,7 @@ def build_messages(goal: str, screenshot: str | Path, history: list[str],
     lines.extend(["", "Current Screenshot:", "",
                   "Please analyze the current screenshot and history to generate the next step."])
     return [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
         {"role": "user", "content": [
             {"type": "text", "text": "\n".join(lines)},
             {"type": "image", "image": str(Path(screenshot).resolve())},

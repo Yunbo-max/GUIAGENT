@@ -12,3 +12,17 @@ checkpoints/
 .cache/
 .superpowers/
 .worktrees/
+
+# MobileGym qz 运行环境（本地准备，不进 git）
+external/
+models/
+nodejs/
+wheels/
+libs/
+ms-playwright/
+qz_run_env.sh
+qz_run_pilot.sh
+probe_result.txt
+probe_py.txt
+runs/
+*.log

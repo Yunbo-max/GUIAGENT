@@ -144,6 +144,7 @@ async def _environment_probe_async(cfg: dict) -> dict:
         coord_space="norm_0_1000", delay_after_action=0.05)
     task = _fresh_task(_tasks(cfg, "train")[0])
     await env.start()
+    await env.wait_ready()
     try:
         obs, _ = await Controller.setup(env, task, eval_mode="grounded")
         image = obs.get_screenshot_bytes()
@@ -176,12 +177,54 @@ def _fresh_task(proto):
     return task
 
 
+async def _setup_with_retry(env, task, max_retries: int = 4):
+    """Setup a task with retries: MobileGym app stores are lazily hydrated after
+    page load, so the first get_state can race the store registration."""
+    from bench_env.runner.base import Controller
+    import asyncio
+    last = None
+    for retry in range(max_retries):
+        try:
+            return await Controller.setup(env, task, eval_mode="grounded")
+        except Exception as exc:
+            last = exc
+            if retry < max_retries - 1:
+                await asyncio.sleep(2.0 + retry * 1.5)
+    raise last
+
+
 async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: int,
                          policy_name: str, policy, operators: dict | None, round_index: int):
     from contextlib import nullcontext
     from bench_env.env.mobile_gym import MobileGymEnv
-    from bench_env.runner.base import Controller, Evaluator
+    from bench_env.runner.base import Evaluator
     from improving.spectral import folded_operators
+
+    # Disable chromium GPU to avoid clashing with the loaded Qwen CUDA context.
+    _orig_launch = MobileGymEnv.get_launch_args
+    @staticmethod
+    def _patched_launch(headless, proxy=None, browser_type="chromium"):
+        args = _orig_launch(headless, proxy, browser_type)
+        if browser_type == "chromium":
+            args.setdefault("args", []).append("--disable-gpu")
+        return args
+    MobileGymEnv.get_launch_args = _patched_launch
+
+    # Some tasks (e.g. alipay.SendMessageToContact) hydrate their app store lazily
+    # after reset+warm, slower than the native 5-attempt get_state retry. Extend the
+    # retry window so the required app store has time to register before sampling.
+    import asyncio as _asyncio
+    _orig_get_state = MobileGymEnv.get_state
+    async def _patched_get_state(self, *, required_apps=None):
+        for attempt in range(40):
+            state = await self._get_state()
+            if state and "os" in state:
+                apps = state.get("apps") or {}
+                if required_apps is None or all(a in apps for a in required_apps):
+                    return state
+            await _asyncio.sleep(0.5 + attempt * 0.25)
+        return await _orig_get_state(self, required_apps=required_apps)
+    MobileGymEnv.get_state = _patched_get_state
 
     if out.exists():
         raise FileExistsError(f"Refusing to overwrite episodes: {out}")
@@ -193,6 +236,16 @@ async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: 
     evaluator = Evaluator(judge_mode="state", eval_mode="grounded")
     records = []
     await env.start()
+    await env.wait_ready()
+    # Pre-warm every involved app store so their Zustand stores register before
+    # the per-task reset+warm path; some apps (alipay) hydrate slowly on cold
+    # preview servers and miss the native get_state retry window.
+    all_apps = sorted({a for t in tasks for a in (getattr(t, "apps", None) or [])})
+    if all_apps:
+        try:
+            await env.warm_apps(all_apps)
+        except Exception:
+            pass
     try:
         with (folded_operators(policy.model, operators)
               if operators is not None else nullcontext()):
@@ -213,7 +266,7 @@ async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: 
                         "judge": None, "status": "collecting",
                     }
                     try:
-                        initial, params = await Controller.setup(env, task, eval_mode="grounded")
+                        initial, params = await _setup_with_retry(env, task)
                         ep["instance_id"] = _digest([task.id, params, task.description])
                         ep["goal"] = task.description
                         obs = initial
@@ -302,6 +355,9 @@ def _feedback(episodes, cfg):
 
 def _settings(cfg, arm):
     c = deepcopy(cfg)
+    # Stable per-arm runtime seed (training.py's plan_training_batches requires
+    # an integer in [0, 2**63); the feedback-only runner has no manifest stage).
+    c.setdefault("runtime_seed", int(_digest(["feedback_runtime", c["study"].get("seed", 11), arm])[:15], 16))
     spectral = c["spectral"]
     spectral.pop("tau_decay", None)
     spectral.pop("tau_mode", None)
