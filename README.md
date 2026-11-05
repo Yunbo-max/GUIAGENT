@@ -1,5 +1,17 @@
 # SPECTRUM
 
+## Opt-in native Windows AndroidWorld dual-AVD throughput experiment
+
+[Two-emulator CPU/sampling plan](docs/ANDROIDWORLD_PARALLEL2_ZH.md) ·
+[Dual-AVD pilot configuration](configs/android/androidworld_feedback_learned_windows_pilot_parallel2.json) ·
+[Windows AVD2 launcher](scripts/windows/start_androidworld_parallel2.ps1)
+
+The native AndroidWorld collection can now run in two separate, isolated Pixel6
+Android 13 emulator processes and validate every native verdict. This **does
+not alter an active Windows experiment**, and no speedup or numerical benchmark
+score has yet been measured on the dual-AVD host. The current MobileGym
+four-Chromium optimization remains untouched.
+
 ## GPU 1 throughput and memory qualification — 5 November 2026
 
 [显存参数、1/2/4/24 环境实测与限制](docs/GPU_MEMORY_AND_THROUGHPUT_ZH.md) ·

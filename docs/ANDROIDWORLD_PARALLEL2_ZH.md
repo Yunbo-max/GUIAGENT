@@ -70,7 +70,7 @@ AVDs can overlap simulator waits but add GPU model copies and CUDA
 contention. Do not promise 2x or a revised finish date without proof.
 
 The current original run cannot be transparently continued by this
-new process layout. Five already-complete Round 0 episodes remain
+new process layout. Any already-complete Round 0 episodes remain
 preserved in the original output; the opt-in accelerated experiment
 starts its own Round 0. Never merge the two runs into one official
 reproducibility trajectory without an explicit provenance policy.
