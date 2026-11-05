@@ -19,6 +19,28 @@
 
 原有两套配置的默认训练参数均是 batch 1、累积 8。新提供的 [四环境配置](../configs/mobilegym/feedback_only_qwen4b_parallel4.json) 是显式选择，不覆盖原默认配置。
 
+### 主机实测与配置审阅（2026-11-05 22:25–22:29 UTC）
+
+原生 Windows 检测得到 AMD Ryzen Threadripper PRO 9955WX、16 个物理核心、32 个逻辑线程、255.38 GiB 系统内存。一次 3 秒采样的全机 CPU 使用率为 33.4%，可用 RAM 为 174.54 GiB；这只是采样窗口，不是长期峰值。两张卡各报告 97887 MiB，实验仅使用 GPU 1。该时段 GPU 1 的设备占用约 31–32 GiB，会随阶段变化。`emulator -accel-check` 确认 WHPX 已安装并可用。
+
+这些数据支持继续观察当前并行运行，但不能证明并行比顺序执行更快。按 CPU 线程数直接划分串行/并行的表格只能作为起始经验，不能代替两任务的配对吞吐测量。目前保留 MobileGym 4 环境、AndroidWorld 1 个 AVD。
+
+**AndroidWorld 的 batch 4 是当前封存运行配置，不是“完整长上下文资格测试已通过”的结论。** 上表 batch 2/4 的既有训练峰值来自 MobileGym 原生训练反馈。AndroidWorld 自身的长轨迹、教师反馈和接近 8192-token 的显存验收仍需单独记录。保守的新运行可先用 batch 2 / accumulation 4，再测试 batch 4 / accumulation 2；不能原地修改已经封存的实验来混合两种设置。有效 batch 相同保持了每次更新的样本数，但浮点计算、分组和随机采样仍可能不同，不保证逐位相同结果。
+
+Windows 的 `scripts/windows/run_benchmark.ps1 -Benchmark MobileGym -Full` 仍选择原始单环境配置，**不会自动选择四环境优化**。明确选择新配置的命令如下（在仓库根目录执行，模型和服务需已准备好）：
+
+```powershell
+$env:CUDA_VISIBLE_DEVICES = "1"
+$env:OMP_NUM_THREADS = "4"
+$env:MKL_NUM_THREADS = "4"
+& .\.venv-guiagent\Scripts\python.exe scripts\run_mobilegym_feedback.py `
+  --config configs/mobilegym/feedback_only_qwen4b_parallel4.json run
+```
+
+这个命令不会附加到已运行的实验，也不会自行设置 40 GiB allocator 上限；已有任务在跑时不要重复启动。当前主机使用独立封存配置和本地调度器，继续运行不依赖此通用 `-Full` 入口。CPU 线程 4 是限制线程争用的起点，不是该 CPU 的已证明最优值。
+
+内存限制的 API 语义核对使用本机对应的 [PyTorch 2.8 官方文档](https://docs.pytorch.org/docs/2.8/generated/torch.cuda.memory.set_per_process_memory_fraction.html)。模拟器 VM 加速与 GPU 图形加速的区别见 [Android 官方文档](https://developer.android.com/studio/run/emulator-acceleration)。本地 83 passed / 1 skipped 不应被描述为已经核实此提交的远端 Windows CI 通过。
+
 ## 哪些参数影响多少 GB？
 
 这里的 GiB = 2^30 字节；十进制 GB = 10^9 字节，两者不要混算。系统 RAM、GPU 显存、磁盘模型文件大小也不是同一个指标。
