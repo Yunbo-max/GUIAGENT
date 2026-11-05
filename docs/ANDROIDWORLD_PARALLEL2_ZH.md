@@ -35,6 +35,19 @@ but write to NEW output directories. Do not rerun "prepare" against
 an existing manifest. Original results/partial screenshots must
 remain intact, including Round 0 episodes already completed.
 
+For a smaller and faster throughput-only A/B (2 train instances,
+2 repeated trajectories each, no SFT), before committing the full
+pilot:
+
+    python scripts/windows/bench_androidworld_throughput.py --config configs/android/androidworld_feedback_learned_windows_pilot_parallel2.json --mode both
+
+The output compares real episode completions and actions per minute,
+along with wall-clock components model_generation, ADB actuation,
+state stabilization, PNG encoding and explicit 1.5s wait.
+Run it only when both AVDs are fully installed and not controlled
+by an older active collector. A/B outputs live under a separate
+runs/androidworld_windows/avd_ab_probe_v1 root.
+
 1. On the Windows machine, finish or intentionally pause the original
    AndroidWorld Python collector at a safe boundary. Do not let two
    collectors operate the same AVD. Do not stop MobileGym if it is healthy.
