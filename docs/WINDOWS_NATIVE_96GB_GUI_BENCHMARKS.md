@@ -45,7 +45,8 @@ install it first through the Windows Package Manager.
     cd GUIAGENT
 
 Optional initial system tools installer (Git, Python3.11, FFmpeg, Node,
-Android Studio); restart your PowerShell afterwards if PATH has changed:
+Android Studio). It completes the system-install stage and exits; **restart
+PowerShell** before the next command so PATH is refreshed:
 
     powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\setup_windows.ps1 -Benchmark Both -InstallSystemTools
 
@@ -161,3 +162,7 @@ backprop memory and all-task native verifier paths.
 This integration does not claim identical scores on two environments,
 official UI-Voyager 81% reproduction, multi-run statistical stability,
 or a proof of long-horizon reward credit assignment.
+
+PowerShell execution policy may block direct .ps1 launches; run
+Set-ExecutionPolicy -Scope Process Bypass in the **current PowerShell window**
+if allowed by your organization, rather than changing the permanent policy.

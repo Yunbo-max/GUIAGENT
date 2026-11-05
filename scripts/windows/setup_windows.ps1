@@ -33,7 +33,8 @@ if ($InstallSystemTools) {
   foreach ($id in $packages) {
     Run "winget $id" { winget install --id $id --exact --accept-source-agreements --accept-package-agreements }
   }
-  Write-Host "Reopen PowerShell if new commands are not visible on PATH." -ForegroundColor Yellow
+  Write-Host "System packages installed. Close/reopen PowerShell and rerun without -InstallSystemTools." -ForegroundColor Yellow
+  return
 }
 Require "git" "Install Git for Windows: winget install --id Git.Git --exact"
 Require "py" "Install 64-bit Python 3.11: winget install --id Python.Python.3.11 --exact"
@@ -85,11 +86,11 @@ if ($WantMobile) {
   try {
     $env:PUPPETEER_SKIP_DOWNLOAD = "1"
     if (Test-Path (Join-Path $Mobile "package-lock.json")) {
-      Run "MobileGym npm ci" { npm ci }
+      Run "MobileGym npm ci" { & npm.cmd ci }
     } else {
-      Run "MobileGym npm install" { npm install }
+      Run "MobileGym npm install" { & npm.cmd install }
     }
-    Run "Build MobileGym simulator" { npm run build }
+    Run "Build MobileGym simulator" { & npm.cmd run build }
     if ($DownloadMobileGymData) {
       $Archive = Join-Path $Mobile "mobilegym-data-v0.1.0.tar.gz"
       if (-not (Test-Path $Archive)) {
