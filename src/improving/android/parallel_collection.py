@@ -105,6 +105,34 @@ def _worker(payload: dict[str,Any]) -> dict:
         policy.close()
 
 
+
+def assemble_frozen_episodes(instances, repeats, worker_rows):
+    """Check disjoint native verifier receipts and restore task-major order.
+
+    This function is deliberately pure for CPU-only test coverage of the
+    most safety-critical part of concurrent native collection.
+    """
+    from improving.androidworld_feedback import _verify_episode_population
+
+    index = {}
+    for rows in worker_rows:
+        for ep in rows:
+            key = (ep.get("instance_id"), ep.get("repeat_id"))
+            if key in index:
+                raise ValueError(f"Duplicate AndroidWorld task/repeat across workers: {key}")
+            index[key] = ep
+    merged = []
+    for instance in instances:
+        for attempt in range(repeats):
+            key = (instance["instance_id"], attempt)
+            if key not in index:
+                raise ValueError(f"Missing verified AndroidWorld task/repeat: {key}")
+            merged.append(index.pop(key))
+    if index:
+        raise ValueError("Unrequested AndroidWorld episode returned by worker")
+    _verify_episode_population(merged,instances,repeats,instances[0]["split"])
+    return merged
+
 def collect_parallel(cfg: dict, *, checkpoint: str, instances: list[dict],
                      path: str|Path, repeats: int, policy_name: str,
                      round_index: int, operators: dict|None, seed: int) -> list[dict]:
@@ -170,22 +198,8 @@ def collect_parallel(cfg: dict, *, checkpoint: str, instances: list[dict],
         if len(items)!=report["count"] or len(items)!=len(groups[report["index"]])*repeats:
             raise ValueError("AVD worker finished incomplete task/attempt population")
         observations.append(items)
-    # Preserve the original task-major order rather than worker completion order.
-    grouped={}
-    for worker_index,items in enumerate(observations):
-        for row in items:
-            key=(row["instance_id"],row["repeat_id"])
-            if key in grouped:
-                raise ValueError("Duplicate native episode across AVD workers")
-            grouped[key]=row
-    ordered=[]
-    for instance in instances:
-        for repeat in range(repeats):
-            key=(instance["instance_id"],repeat)
-            if key not in grouped:
-                raise ValueError(f"Missing frozen task/attempt: {key}")
-            ordered.append(grouped[key])
-    _verify_episode_population(ordered,instances,repeats,instances[0]["split"])
+    # Preserve task-major ordering; no hallucinated or missing native rewards.
+    ordered = assemble_frozen_episodes(instances,repeats,observations)
     # All steps preserve exact screenshot provenance in per-worker subfolders.
     with (path/"episodes.jsonl").open("x",encoding="utf-8") as f:
         for row in ordered:
