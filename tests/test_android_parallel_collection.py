@@ -51,7 +51,7 @@ def test_worker_count_rejects_bool_or_24_browser_mistake():
 
 def test_parallel_aggregation_orders_frozen_task_and_repeat_not_finish_order():
     from improving.android.parallel_collection import assemble_frozen_episodes
-    cases=[{"instance_id":"task-A"},{"instance_id":"task-B"}]
+    cases=[{"instance_id":"task-A","split":"train"},{"instance_id":"task-B","split":"train"}]
     def row(task,repeat):
         return {"instance_id":task,"repeat_id":repeat,"split":"train",
                 "success":repeat==0,"status":"complete"}
