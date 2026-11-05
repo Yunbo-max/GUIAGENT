@@ -26,3 +26,6 @@ probe_result.txt
 probe_py.txt
 runs/
 *.log
+
+# Native Windows GUIAGENT setup
+.venv-guiagent/
