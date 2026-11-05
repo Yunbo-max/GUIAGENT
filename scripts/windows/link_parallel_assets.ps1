@@ -1,5 +1,5 @@
 # Prepare a SEPARATE native Windows Git worktree for AndroidWorld optimization.
-# No overwrites: only create data/models junctions to EXISTING read-only assets.
+# No overwrites: only create data/models junctions to EXISTING assets. Junctions are writable.
 # Keep original active MobileGym process/source tree completely untouched.
 param([Parameter(Mandatory=$true)][string]$OriginalRepo)
 $ErrorActionPreference="Stop"
@@ -16,10 +16,11 @@ foreach($name in @("data","models")){
   if(!(Test-Path $target)){throw "Required original asset directory missing: $target"}
   if(Test-Path $newpath){throw "Refusing to replace existing path: $newpath"}
   New-Item -ItemType Junction -Path $newpath -Target $target | Out-Null
-  Write-Host "Read-only intended asset link: $newpath -> $target" -ForegroundColor Cyan
+  Write-Host "Shared writable asset junction: $newpath -> $target" -ForegroundColor Cyan
 }
 $Py=Join-Path $Original ".venv-guiagent\Scripts\python.exe"
 if(!(Test-Path $Py)){throw "Original Python 3.11 environment missing: $Py"}
-Write-Host "Asset links ready. The current original run remains untouched." -ForegroundColor Green
+Write-Host "Asset links ready. No active files were modified by setup." -ForegroundColor Green
+Write-Host "Junctions are NOT read-only! Do not rerun prepare/download or change model files from the new worktree." -ForegroundColor Yellow
 Write-Host "Use this venv interpreter for new-worktree commands: & '$Py' ..."
 Write-Host "Do not run AndroidWorld on an AVD already controlled by the original collector." -ForegroundColor Yellow

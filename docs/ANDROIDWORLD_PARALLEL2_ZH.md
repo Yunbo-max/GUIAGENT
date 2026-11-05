@@ -4,7 +4,7 @@
 这套代码在独立 Git 分支 / 新的输出目录中。不要覆盖当前 AndroidWorld
 已采集的轨迹，不要修改正在运行 MobileGym 的原始源码目录。
 
-**最安全的获取方式：新建 Windows worktree，共用只读模型/数据资源。**
+**最安全的获取方式：新建 Windows worktree，通过 NTFS Junction 共享既有模型/数据。**
 
 在当前原仓库的 PowerShell 窗口执行以下命令；这里不修改原 worktree：
 
@@ -15,7 +15,7 @@
     powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/link_parallel_assets.ps1 -OriginalRepo $old
     $py = Join-Path $old ".venv-guiagent\Scripts\python.exe"
 
-上述脚本只为新 worktree 创建 data 和 models 的 NTFS Junction；不复制权重、
+上述脚本只为新 worktree 创建 data 和 models 的 NTFS Junction；Junction **本身不是只读权限**，不要从新 worktree 重新 prepare/download 或修改共享模型与数据；不复制权重、
 不修改旧实验输出、不触碰活跃 MobileGym 进程。生成结果放在新 worktree
 下的 runs，不与旧结果混用。如果原目录或新的 data/models 路径有冲突，
 脚本会直接报错，禁止覆盖。
