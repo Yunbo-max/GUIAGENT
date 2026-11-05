@@ -2,6 +2,7 @@
 
 ## Native Windows: MobileGym + AndroidWorld on NVIDIA 96GB
 
+[中文 Windows 安装指南](docs/WINDOWS_96GB_SETUP_ZH.md) ·
 [Windows installation and two-benchmark guide](docs/WINDOWS_NATIVE_96GB_GUI_BENCHMARKS.md) ·
 [AndroidWorld Learned config](configs/android/androidworld_feedback_learned_windows_96gb.json) ·
 [PowerShell installer](scripts/windows/setup_windows.ps1) ·
