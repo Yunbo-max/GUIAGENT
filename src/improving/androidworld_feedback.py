@@ -104,6 +104,8 @@ def validate(cfg: dict) -> dict:
         raise ValueError("Do not silently change the shared multimodal backbone")
     if cfg.get("data", {}).get("eval_tasks") != "all":
         raise ValueError("Keep full AndroidWorld native eval registry in the manifest")
+    from improving.android.parallel_collection import parse_worker_devices
+    parse_worker_devices(cfg["android"])  # fail fast on shared AVD/port collisions
     from improving.android.tau import validate_tau_settings
     from improving.learned_gains import validate_gain_settings
     validate_tau_settings(cfg["spectral"])
@@ -135,8 +137,13 @@ def plan(cfg: dict) -> dict:
     source_ready = root.joinpath("androidworld", "android_world", "registry.py").is_file()
     manifest_ready = Path(cfg["manifest"]).is_file()
     checkpoint = Path(cfg["model"]["checkpoint"]).expanduser()
+    from improving.android.parallel_collection import parse_worker_devices
+    devices = parse_worker_devices(cfg["android"])
     info: dict = {
         "protocol": PROTOCOL, "benchmark": "AndroidWorld", "host": "native Windows or POSIX",
+        "environment_workers": len(devices), "worker_devices": devices,
+        "inference_model_copies_when_parallel": len(devices),
+        "cpu_threads_per_worker": cfg["android"].get("inference_cpu_threads", 2),
         "output_dir": cfg["output_dir"], "source_ready": source_ready,
         "manifest_ready": manifest_ready,
         "checkpoint_ready": (checkpoint / "config.json").is_file(),
@@ -178,11 +185,25 @@ def _collection(cfg, checkpoint: str, instances: list[dict], path: Path,
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-    with (folded_operators(policy.model, operators)
-          if operators is not None else nullcontext()):
-        episodes = collect_episodes(
-            instances, policy.generate, path, collection_cfg, policy=policy_name,
-            checkpoint=checkpoint, round_index=round_index)
+    from improving.android.parallel_collection import parse_worker_devices
+    devices = parse_worker_devices(cfg["android"])
+    if len(devices) > 1:
+        # Spawn independent real emulators and model processes. In particular,
+        # never concurrently use AndroidWorld's process-global random seeds
+        # from Python threads. This keeps actual native verifier semantics.
+        from improving.android.parallel_collection import collect_parallel
+        episodes = collect_parallel(
+            collection_cfg, checkpoint=checkpoint, instances=instances,
+            path=path, repeats=repeats, policy_name=policy_name,
+            round_index=round_index, operators=operators, seed=seed)
+    else:
+        if policy is None:
+            raise ValueError("Single-AVD collection requires an already-loaded Qwen policy")
+        with (folded_operators(policy.model, operators)
+              if operators is not None else nullcontext()):
+            episodes = collect_episodes(
+                instances, policy.generate, path, collection_cfg, policy=policy_name,
+                checkpoint=checkpoint, round_index=round_index)
     split = instances[0]["split"]
     _verify_episode_population(episodes, instances, repeats, split)
     return episodes
@@ -251,6 +272,8 @@ def run(cfg: dict, *, resume: bool = False) -> dict:
                 raise ValueError("Existing unsealed experiment directory")
             _write_json(manifest_path, identity)
 
+        from improving.android.parallel_collection import parse_worker_devices
+        parallel = len(parse_worker_devices(cfg["android"])) > 1
         round0_path = root / "round0_native"
         if (round0_path / "episodes.jsonl").is_file():
             round0 = _load_rows(round0_path / "episodes.jsonl")
@@ -258,14 +281,15 @@ def run(cfg: dict, *, resume: bool = False) -> dict:
         else:
             if round0_path.exists():
                 raise RuntimeError("Incomplete Round 0 collection; do not silently regenerate history")
-            initial = QwenPolicy(checkpoint, cfg)
+            initial = None if parallel else QwenPolicy(checkpoint, cfg)
             try:
                 round0 = _collection(
                     cfg, checkpoint, train, round0_path,
                     repeats=cfg["study"]["round0_repeats"], policy_name="native",
                     policy=initial)
             finally:
-                initial.close()
+                if initial is not None:
+                    initial.close()
         feedback, receipt = _feedback(round0, cfg)
         if not (root / "round0_feedback.json").is_file():
             _write_json(root / "round0_feedback.json", receipt)
@@ -298,7 +322,7 @@ def run(cfg: dict, *, resume: bool = False) -> dict:
                     raise RuntimeError(f"Partial AndroidWorld stage at {stage}; inspect before retrying")
                 stage.mkdir(parents=True)
                 settings = _settings(cfg, arm, r)
-                policy = QwenPolicy(current, settings)
+                policy = None if parallel and arm == "feedback_sd" else QwenPolicy(current, settings)
                 operators, gain_receipt, geometry = None, None, None
                 try:
                     if arm != "feedback_sd":
@@ -316,6 +340,12 @@ def run(cfg: dict, *, resume: bool = False) -> dict:
                             _write_json(stage / "learned_gains.json", gain_receipt)
                         else:
                             operators = ops
+                    if parallel and policy is not None:
+                        # Geometry/gain fitting is done. Worker processes
+                        # independently load inference-only models on real AVDs;
+                        # free this parent copy to protect simultaneous MobileGym.
+                        policy.close()
+                        policy = None
                     if arm == "feedback_sd":
                         episodes = _collection(
                             settings, current, train, stage / "train_native",
@@ -332,21 +362,23 @@ def run(cfg: dict, *, resume: bool = False) -> dict:
                             repeats=half, policy_name="spectral",
                             policy=policy, operators=operators, round_index=r)
                 finally:
-                    policy.close()
+                    if policy is not None:
+                        policy.close()
                 source_feedback, evidence = _feedback(episodes, settings)
                 _write_json(stage / "feedback.json", evidence)
                 output = stage / "checkpoint"
                 train_receipt = train_feedback(current, source_feedback, output, settings)
                 _write_json(stage / "train_receipt.json", train_receipt)
                 current = str(output.resolve())
-                agent = QwenPolicy(current, settings)
+                agent = None if parallel else QwenPolicy(current, settings)
                 try:
                     evaluated = _collection(
                         settings, current, test, stage / "evaluation",
                         repeats=1, policy_name="native",
                         policy=agent, round_index=r)
                 finally:
-                    agent.close()
+                    if agent is not None:
+                        agent.close()
                 wins = sum(bool(row["success"]) for row in evaluated)
                 entry = {
                     "arm": arm, "round": r, "checkpoint": current,
@@ -381,19 +413,26 @@ def run(cfg: dict, *, resume: bool = False) -> dict:
 
 def environment_check(cfg: dict, *, setup: bool = False) -> dict:
     from improving.android.environment import _load_components, _open_env
+    from improving.android.parallel_collection import parse_worker_devices
     validate(cfg)
     _, launcher, _ = _load_components(cfg["android"]["upstream_root"])
-    opts = dict(cfg["android"], emulator_setup=setup)
-    env = _open_env(launcher, opts)
-    try:
-        image = env.get_state(wait_to_stabilize=True).pixels
-        if image is None or image.size == 0:
-            raise RuntimeError("AndroidWorld native screenshot unavailable")
-        return {"status": "androidworld_native_environment_checked",
-                "native_emulator": True, "setup_apps": setup,
-                "image_shape": list(image.shape), "model_loaded": False}
-    finally:
-        env.close()
+    results = []
+    # Each configured AVD gets its own one-time accessibility-forwarder/app
+    # setup; the evaluator must never point two workers at one emulator.
+    for device in parse_worker_devices(cfg["android"]):
+        opts = {**cfg["android"], **device, "emulator_setup": setup}
+        env = _open_env(launcher, opts)
+        try:
+            image = env.get_state(wait_to_stabilize=True).pixels
+            if image is None or image.size == 0:
+                raise RuntimeError(f"AndroidWorld screenshot unavailable for {device['avd_name']}")
+            results.append({"avd_name":device["avd_name"],"console_port":device["console_port"],
+                            "grpc_port":device["grpc_port"],"image_shape":list(image.shape),
+                            "native_emulator":True})
+        finally:
+            env.close()
+    return {"status":"androidworld_native_environment_checked",
+            "devices":results,"setup_apps":setup,"model_loaded":False}
 
 
 def main() -> None:
