@@ -1,5 +1,19 @@
 # SPECTRUM
 
+## Native Windows: MobileGym + AndroidWorld on NVIDIA 96GB
+
+[Windows installation and two-benchmark guide](docs/WINDOWS_NATIVE_96GB_GUI_BENCHMARKS.md) ·
+[AndroidWorld Learned config](configs/android/androidworld_feedback_learned_windows_96gb.json) ·
+[PowerShell installer](scripts/windows/setup_windows.ps1) ·
+[Benchmark launcher](scripts/windows/run_benchmark.ps1)
+
+AndroidWorld is now an additional native Windows-capable GUI benchmark
+alongside MobileGym. Both use Qwen3-VL-4B BF16 feedback-only Learned SPECTRUM
+and a no-spectrum Feedback SD control. The existing UI-Voyager protocol and
+MobileGym historical experimental records are preserved. Windows emulator
+and GPU end-to-end qualification still need to run on the target host.
+
+
 ## MobileGym learned-feedback spectrum (new opt-in study)
 
 [Execution guide](docs/MOBILEGYM_FEEDBACK_LEARNED_ZH.md) ·
