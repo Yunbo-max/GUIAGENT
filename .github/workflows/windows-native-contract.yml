@@ -12,6 +12,8 @@ on:
       - 'tests/test_android_windows_native.py'
       - 'tests/test_androidworld_feedback.py'
       - 'tests/test_android_parallel_collection.py'
+      - 'tests/test_android_progress_reader.py'
+      - 'tests/test_android_throughput.py'
       - 'tests/test_windows_gui_contract.py'
   pull_request:
     paths:
@@ -52,4 +54,4 @@ jobs:
       - name: Portable lock, source schema, and independent-AVD worker CPU tests
         env:
           PYTHONPATH: src
-        run: python -m pytest tests/test_android_windows_native.py tests/test_windows_gui_contract.py tests/test_android_parallel_collection.py -q
+        run: python -m pytest tests/test_android_windows_native.py tests/test_windows_gui_contract.py tests/test_android_parallel_collection.py tests/test_android_progress_reader.py tests/test_android_throughput.py -q

@@ -19,6 +19,10 @@ PYFILES=(
  "tests/test_androidworld_feedback.py",
  "tests/test_android_windows_native.py",
  "tests/test_android_parallel_collection.py",
+ "scripts/windows/inspect_androidworld_progress.py",
+ "scripts/windows/bench_androidworld_throughput.py",
+ "tests/test_android_progress_reader.py",
+ "tests/test_android_throughput.py",
 )
 FILES=(
  "configs/android/androidworld_feedback_learned_windows_96gb.json",
