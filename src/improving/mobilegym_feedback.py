@@ -54,6 +54,9 @@ def validate(cfg: dict) -> dict:
     for section in ("model", "mobilegym", "study", "spectral", "train"):
         if not isinstance(cfg.get(section), dict):
             raise ValueError(f"Missing {section} object")
+    workers = cfg["mobilegym"].get("environment_workers", 1)
+    if type(workers) is not int or workers not in (1, 2, 4, 8, 16, 24):
+        raise ValueError("mobilegym.environment_workers must be 1, 2, 4, 8, 16 or 24")
     study = cfg["study"]
     for name in ("train_task_limit", "test_task_limit", "round0_repeats",
                  "group_size", "rounds", "max_steps", "history_len"):
@@ -200,6 +203,18 @@ async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: 
     from bench_env.runner.base import Evaluator
     from improving.spectral import folded_operators
 
+    workers = cfg["mobilegym"].get("environment_workers", 1)
+    if type(workers) is not int or workers not in (1, 2, 4, 8, 16, 24):
+        raise ValueError("mobilegym.environment_workers must be 1, 2, 4, 8, 16 or 24")
+    if out.exists():
+        raise FileExistsError(f"Refusing to overwrite episodes: {out}")
+    from improving.mobilegym_reuse import collection_reuse
+    reused, reuse_receipt = collection_reuse(
+        cfg, out, tasks, repeats, checkpoint, policy_name, round_index)
+    out.mkdir(parents=True)
+    if reuse_receipt is not None:
+        _json_new(out / "reuse_receipt.json", reuse_receipt)
+
     # Disable chromium GPU to avoid clashing with the loaded Qwen CUDA context.
     _orig_launch = MobileGymEnv.get_launch_args
     @staticmethod
@@ -240,11 +255,6 @@ async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: 
         return await _orig_open_app(self, app_name, timeout_ms, wait_stable)
     MobileGymEnv.open_app = _patched_open_app
 
-    if out.exists():
-        raise FileExistsError(f"Refusing to overwrite episodes: {out}")
-    out.mkdir(parents=True)
-    evaluator = Evaluator(judge_mode="state", eval_mode="grounded")
-    records = []
     # Pre-warm every involved app store so their Zustand stores register before
     # the per-task reset+warm path; some apps (alipay) hydrate slowly on cold
     # preview servers and miss the native get_state retry window.
@@ -255,107 +265,134 @@ async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: 
             url=cfg["mobilegym"]["url"], headless=True, verbose=False,
             coord_space="norm_0_1000",
             delay_after_action=float(cfg["mobilegym"].get("delay_after_action", 0.2)))
-        await e.start()
-        await e.wait_ready()
-        if all_apps:
-            try:
-                await e.warm_apps(all_apps)
-            except Exception:
-                pass
+        try:
+            await e.start()
+            await e.wait_ready()
+            if all_apps:
+                try:
+                    await e.warm_apps(all_apps)
+                except Exception:
+                    pass
+        except BaseException:
+            await e.close()
+            raise
         return e
 
-    env = await _fresh_env()
+    from improving.rollout_workers import ordered_workers, SerialInference
+    workers = cfg["mobilegym"].get("environment_workers", 1)
+    requests = [(proto, attempt) for proto in tasks for attempt in range(repeats)]
+
+    async def worker(worker_index, assignments):
+        env = None
+        evaluator = Evaluator(judge_mode="state", eval_mode="grounded")
+        local_records = []
+        episode_count = 0
+        try:
+            for slot, (proto, attempt) in assignments:
+                if slot in reused:
+                    previous = reused[slot]
+                    _json_new(out / previous["episode_id"] / "episode.json", previous)
+                    local_records.append((slot, previous))
+                    continue
+                if env is None:
+                    env = await _fresh_env()
+                task = _fresh_task(proto)
+                episode_id = _digest([proto.id, attempt, policy_name, round_index, str(out)])[:24]
+                directory = out / episode_id
+                directory.mkdir(mode=0o700)
+                steps, history = [], []
+                ep = {
+                    "episode_id": episode_id, "task_name": proto.id,
+                    "instance_id": None, "goal": None,
+                    "split": "eval" if policy_name == "eval" else "train",
+                    "policy": "native" if policy_name == "eval" else policy_name,
+                    "checkpoint": checkpoint, "round": round_index,
+                    "steps": steps, "success": None, "native_score": None,
+                    "judge": None, "status": "collecting",
+                }
+                try:
+                    initial, params = await _setup_with_retry(env, task)
+                    ep["instance_id"] = _digest([task.id, params, task.description])
+                    ep["goal"] = task.description
+                    obs = initial
+                    terminated = False
+                    max_steps = min(cfg["study"]["max_steps"],
+                                    getattr(task, "max_steps", None) or cfg["study"]["max_steps"])
+                    for i in range(max_steps):
+                        screenshot = directory / f"step_{i:03d}.jpg"
+                        image = obs.get_screenshot_bytes()
+                        if not image:
+                            raise RuntimeError("MobileGym provided no visual observation")
+                        screenshot.write_bytes(image)
+                        msg = messages(task.description, screenshot, history, cfg["study"]["history_len"])
+                        sample = (policy.generate(msg) if workers == 1 else await inference(msg))
+                        response, ids = sample["response"], sample["response_token_ids"]
+                        if not ids:
+                            raise RuntimeError("Empty model continuation")
+                        step = {
+                            "index": i, "messages": msg, "response": response,
+                            "response_token_ids": ids, "screenshot": str(screenshot.resolve()),
+                            "action": None, "action_error": None, "feedback": "",
+                            "feedback_kind": "none", "done": False,
+                        }
+                        steps.append(step)
+                        try:
+                            kind, data = action_data(response)
+                            action = action_object(response)
+                            step["action"] = {"action_type": kind, "data": data}
+                            result = await env.step(action)
+                        except (ValueError, TypeError) as exc:
+                            # Model-invalid actions count as failures, never repaired.
+                            step.update(action_error=str(exc), feedback=str(exc),
+                                        feedback_kind="action_error")
+                            break
+                        step["done"] = bool(result.done)
+                        step["feedback_kind"] = "action_executed"
+                        history.append(f"{kind}: {data}")
+                        obs = result.observation
+                        if result.done:
+                            terminated = kind == "COMPLETE"
+                            break
+                    # State-based verifier, including unexpected side effects.
+                    final = await env.get_observation()
+                    verdict = await evaluator.evaluate(
+                        task, initial, final, SimpleNamespace(agent_answer=env.agent_answer))
+                    if verdict.judge_error:
+                        raise RuntimeError("Native MobileGym judge error: " + verdict.judge_error)
+                    ep["success"] = bool(terminated and verdict.passed)
+                    ep["native_score"] = 1.0 if ep["success"] else 0.0
+                    ep["judge"] = verdict.to_dict()
+                    ep["status"] = "complete"
+                    _json_new(directory / "episode.json", ep)
+                    local_records.append((slot, ep))
+                except BaseException as exc:
+                    ep["status"] = "aborted"
+                    ep["runtime_error"] = f"{type(exc).__name__}: {exc}"
+                    _json_new(directory / "episode.partial.json", ep)
+                    raise
+                finally:
+                    task.teardown(env)
+                    # Periodic browser restart: qz Chromium accumulates state across
+                    # many screenshot-heavy episodes and eventually dies with a silent
+                    # browser-close. Recycle it every few episodes.
+                    episode_count += 1
+                    if episode_count % 4 == 0 and episode_count < len(assignments):
+                        await env.close()
+                        env = await _fresh_env()
+        finally:
+            if env is not None:
+                await env.close()
+        return local_records
+
     try:
         with (folded_operators(policy.model, operators)
               if operators is not None else nullcontext()):
-            episode_count = 0
-            for proto in tasks:
-                for attempt in range(repeats):
-                    task = _fresh_task(proto)
-                    episode_id = _digest([proto.id, attempt, policy_name, round_index, str(out)])[:24]
-                    directory = out / episode_id
-                    directory.mkdir(mode=0o700)
-                    steps, history = [], []
-                    ep = {
-                        "episode_id": episode_id, "task_name": proto.id,
-                        "instance_id": None, "goal": None,
-                        "split": "eval" if policy_name == "eval" else "train",
-                        "policy": "native" if policy_name == "eval" else policy_name,
-                        "checkpoint": checkpoint, "round": round_index,
-                        "steps": steps, "success": None, "native_score": None,
-                        "judge": None, "status": "collecting",
-                    }
-                    try:
-                        initial, params = await _setup_with_retry(env, task)
-                        ep["instance_id"] = _digest([task.id, params, task.description])
-                        ep["goal"] = task.description
-                        obs = initial
-                        terminated = False
-                        max_steps = min(cfg["study"]["max_steps"],
-                                        getattr(task, "max_steps", None) or cfg["study"]["max_steps"])
-                        for i in range(max_steps):
-                            screenshot = directory / f"step_{i:03d}.jpg"
-                            image = obs.get_screenshot_bytes()
-                            if not image:
-                                raise RuntimeError("MobileGym provided no visual observation")
-                            screenshot.write_bytes(image)
-                            msg = messages(task.description, screenshot, history, cfg["study"]["history_len"])
-                            sample = policy.generate(msg)
-                            response, ids = sample["response"], sample["response_token_ids"]
-                            if not ids:
-                                raise RuntimeError("Empty model continuation")
-                            step = {
-                                "index": i, "messages": msg, "response": response,
-                                "response_token_ids": ids, "screenshot": str(screenshot.resolve()),
-                                "action": None, "action_error": None, "feedback": "",
-                                "feedback_kind": "none", "done": False,
-                            }
-                            steps.append(step)
-                            try:
-                                kind, data = action_data(response)
-                                action = action_object(response)
-                                step["action"] = {"action_type": kind, "data": data}
-                                result = await env.step(action)
-                            except (ValueError, TypeError) as exc:
-                                # Model-invalid actions count as failures, never repaired.
-                                step.update(action_error=str(exc), feedback=str(exc),
-                                            feedback_kind="action_error")
-                                break
-                            step["done"] = bool(result.done)
-                            step["feedback_kind"] = "action_executed"
-                            history.append(f"{kind}: {data}")
-                            obs = result.observation
-                            if result.done:
-                                terminated = kind == "COMPLETE"
-                                break
-                        # State-based verifier, including unexpected side effects.
-                        final = await env.get_observation()
-                        verdict = await evaluator.evaluate(
-                            task, initial, final, SimpleNamespace(agent_answer=env.agent_answer))
-                        if verdict.judge_error:
-                            raise RuntimeError("Native MobileGym judge error: " + verdict.judge_error)
-                        ep["success"] = bool(terminated and verdict.passed)
-                        ep["native_score"] = 1.0 if ep["success"] else 0.0
-                        ep["judge"] = verdict.to_dict()
-                        ep["status"] = "complete"
-                        _json_new(directory / "episode.json", ep)
-                        records.append(ep)
-                    except BaseException as exc:
-                        ep["status"] = "aborted"
-                        ep["runtime_error"] = f"{type(exc).__name__}: {exc}"
-                        _json_new(directory / "episode.partial.json", ep)
-                        raise
-                    finally:
-                        task.teardown(env)
-                        # Periodic browser restart: qz Chromium accumulates state across
-                        # many screenshot-heavy episodes and eventually dies with a silent
-                        # browser-close. Recycle it every few episodes.
-                        episode_count += 1
-                        if episode_count % 4 == 0:
-                            await env.close()
-                            env = await _fresh_env()
+            async with SerialInference(policy.generate) as inference:
+                records = await ordered_workers(requests, workers, worker)
     finally:
-        await env.close()
+        MobileGymEnv.get_launch_args = staticmethod(_orig_launch)
+        MobileGymEnv.get_state = _orig_get_state
+        MobileGymEnv.open_app = _orig_open_app
     _jsonl_new(out / "records.jsonl", records)
     return records
 
@@ -404,6 +441,8 @@ def run(cfg: dict) -> dict:
     from improving.mobilegym_visual_gains import fit_visual_feedback_gains
     import torch
 
+    from improving.mobilegym_reuse import verify_reuse_source
+    reuse_root = verify_reuse_source(cfg)
     protocol = plan(cfg)  # real official split and pinned source, before GPU work
     train, test = _tasks(cfg, "train"), _tasks(cfg, "test")
     root = Path(cfg["output_dir"]).expanduser().resolve()
@@ -416,6 +455,7 @@ def run(cfg: dict) -> dict:
     _json_new(root / "study.json", {
         "plan": protocol, "configuration": cfg, "config_hash": _digest(cfg),
         "starting_checkpoint": checkpoint0, "status": "new_run_no_implicit_resume",
+        "explicit_episode_reuse_source": str(reuse_root) if reuse_root is not None else None,
     })
 
     # Shared Round 0: no spectral generator, no SFT, no calibration references.

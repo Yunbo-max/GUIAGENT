@@ -120,3 +120,11 @@ def test_no_heldout_feedback_in_gain_fit():
     bad["split"] = "eval"
     with pytest.raises(ValueError, match="native-prefix training feedback"):
         split_by_task([bad, row("other", 1)])
+
+
+@pytest.mark.parametrize("workers", [0, 3, True, "2"])
+def test_collection_worker_bounds(workers):
+    cfg = _config()
+    cfg["mobilegym"]["environment_workers"] = workers
+    with pytest.raises(ValueError, match="environment_workers"):
+        validate(cfg)

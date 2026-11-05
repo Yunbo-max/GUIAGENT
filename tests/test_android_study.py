@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import sys
 import pytest
 from improving.android.study import validate_config, seal_study, summarize_episodes, read_complete_stage
 
@@ -33,6 +34,20 @@ def test_frozen_manifest_loader_accepts_valid_instance_disjoint_data(tmp_path):
     from improving.android.study import load_manifest
     manifest = frozen_manifest()
     assert load_manifest(save_manifest(tmp_path/'manifest.json', manifest)) == manifest
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows default text encoding regression')
+def test_frozen_manifest_loader_reads_utf8_goals_on_windows(tmp_path):
+    from improving.android.environment import _digest
+    from improving.android.study import load_manifest
+
+    manifest = frozen_manifest()
+    manifest['instances'][0]['goal'] = '创建文件夹'
+    manifest['manifest_hash'] = _digest({k: v for k, v in manifest.items() if k != 'manifest_hash'})
+    path = tmp_path / 'manifest.json'
+    path.write_text(json.dumps(manifest, ensure_ascii=False), encoding='utf-8')
+
+    assert load_manifest(path) == manifest
 
 
 def test_frozen_manifest_loader_rejects_modified_content(tmp_path):

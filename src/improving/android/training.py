@@ -54,6 +54,62 @@ def response_forward(model, encoded: dict):
     return logits
 
 
+def response_batch_forward(model, encoded: list[dict], *, pad_token_id: int):
+    """One visual model forward for several recorded prompt/response pairs.
+
+    Right padding preserves each example's native token positions. Qwen accepts
+    one shared logits_to_keep vector, so select the union of response positions
+    and then recover each row's exact continuation. Padding contributes no loss.
+    Vision patches/grids retain example order for native multimodal RoPE.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    if not encoded:
+        raise ValueError("An empty visual microbatch cannot be forwarded")
+    if type(pad_token_id) is not int or pad_token_id < 0:
+        raise ValueError("A nonnegative pad_token_id is required")
+    if len(encoded) == 1:
+        return [response_forward(model, encoded[0])]
+    token_fields = {"input_ids", "attention_mask", "token_type_ids", "mm_token_type_ids"}
+    visual_fields = {"pixel_values", "image_grid_thw"}
+    keys = set(encoded[0]["inputs"])
+    if keys - token_fields - visual_fields:
+        raise ValueError(f"Unsupported batched input fields: {sorted(keys - token_fields - visual_fields)}")
+    if not {"input_ids", "attention_mask", *visual_fields}.issubset(keys):
+        raise ValueError("Batched inputs require native screenshot tensors and an attention mask")
+    lengths, positions = [], []
+    for row in encoded:
+        inputs = row["inputs"]
+        prompt, count = int(row["prompt_length"]), int(row["response_length"])
+        length = prompt + count
+        if set(inputs) != keys:
+            raise ValueError("Every example must have the same native input fields")
+        if prompt < 1 or count < 1 or inputs["input_ids"].shape != (1, length):
+            raise ValueError("Encoded sequence length disagrees with continuation metadata")
+        if any(inputs[key].shape != (1, length) for key in keys & token_fields):
+            raise ValueError("Token field length differs from input_ids")
+        if not bool((inputs["attention_mask"] == 1).all()):
+            raise ValueError("Microbatch inputs must be unpadded individual encodings")
+        lengths.append(length)
+        positions.append(torch.arange(prompt - 1, length - 1, device=inputs["input_ids"].device))
+    width = max(lengths)
+    inputs = {}
+    for key in keys:
+        if key in token_fields:
+            pad = pad_token_id if key == "input_ids" else 0
+            inputs[key] = torch.cat([F.pad(row["inputs"][key], (0, width - length), value=pad)
+                                     for row, length in zip(encoded, lengths)], dim=0)
+        else:
+            inputs[key] = torch.cat([row["inputs"][key] for row in encoded], dim=0)
+    selected = torch.unique(torch.cat(positions), sorted=True)
+    logits = model(**inputs, logits_to_keep=selected, use_cache=False).logits
+    if logits.shape[:2] != (len(encoded), len(selected)):
+        raise RuntimeError("Model did not honor batched response-logit selection")
+    return [logits[index:index + 1].index_select(1, torch.searchsorted(selected, positions[index]))
+            for index in range(len(encoded))]
+
+
 def token_kl(student_logits, teacher_logits, top_k: int = 0, chunk_size: int = 32):
     """Mean response reverse KL, with a detached teacher and bounded temporaries.
 
@@ -237,14 +293,15 @@ def _train(checkpoint: str, examples: list[dict], output_dir: str | Path,
     top_k = int(train.get("kl_top_k", 0))
     if min(epochs, accumulation, rank, chunk) < 1 or top_k < 0:
         raise ValueError("Invalid training hyperparameters")
-    if int(train.get("batch_size", 1)) != 1:
-        raise ValueError("This visual training runtime uses microbatch size one")
+    batch_size = train.get("batch_size", 1)
+    if type(batch_size) is not int or batch_size not in (1, 2, 4):
+        raise ValueError("Visual training batch_size must be 1, 2 or 4")
     learning_rate = float(train.get("learning_rate", 1e-5))
     if not math.isfinite(learning_rate) or learning_rate <= 0:
         raise ValueError("learning_rate must be finite and positive")
     runtime_seed = config.get("runtime_seed")
     groups, exposure = plan_training_batches(
-        len(examples), accumulation, epochs=epochs,
+        len(examples), accumulation * batch_size, epochs=epochs,
         max_updates=train.get("max_updates"), seed=runtime_seed)
     torch.manual_seed(runtime_seed)
     if torch.cuda.is_available():
@@ -266,6 +323,8 @@ def _train(checkpoint: str, examples: list[dict], output_dir: str | Path,
         total_updates = len(groups)
         losses: list[float] = []
         optimizer_steps = 0
+        forward_microbatches = 0
+        pad_token_id = int(policy.processor.tokenizer.pad_token_id) if batch_size > 1 else 0
         response_tokens = 0
         teacher_prompt_tokens = 0
         student_prompt_tokens = 0
@@ -273,35 +332,43 @@ def _train(checkpoint: str, examples: list[dict], output_dir: str | Path,
         if policy.device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(policy.device)
         for group in groups:
-            for example_index in group:
-                example = examples[example_index]
-                student = policy.encode_example(example)
-                response_tokens += int(student["response_length"])
-                student_prompt_tokens += int(student["prompt_length"])
+            for start_index in range(0, len(group), batch_size):
+                microbatch = [examples[index] for index in group[start_index:start_index + batch_size]]
+                student = [policy.encode_example(example) for example in microbatch]
+                response_tokens += sum(int(row["response_length"]) for row in student)
+                student_prompt_tokens += sum(int(row["prompt_length"]) for row in student)
                 if feedback:
-                    teacher = policy.encode_example(example, feedback=example["feedback"])
-                    teacher_prompt_tokens += int(teacher["prompt_length"])
+                    teacher = [policy.encode_example(example, feedback=example["feedback"])
+                               for example in microbatch]
+                    teacher_prompt_tokens += sum(int(row["prompt_length"]) for row in teacher)
                     model.eval()
                     # Frozen base == pre-update checkpoint for this whole training call.
                     # No separate model copy and no gradient through the teacher.
                     with model.disable_adapter(), torch.no_grad():
-                        teacher_logits = response_forward(model, teacher).detach().cpu()
+                        teacher_logits = [value.detach().cpu() for value in
+                            response_batch_forward(model, teacher, pad_token_id=pad_token_id)]
                     del teacher
                     model.train()
-                    student_logits = response_forward(model, student)
-                    loss = token_kl(student_logits, teacher_logits, top_k=top_k, chunk_size=chunk)
+                    student_logits = response_batch_forward(model, student, pad_token_id=pad_token_id)
+                    example_losses = [token_kl(s, t, top_k=top_k, chunk_size=chunk)
+                                      for s, t in zip(student_logits, teacher_logits)]
                     del teacher_logits, student_logits
                 else:
                     model.train()
-                    logits = response_forward(model, student)
-                    labels = student["inputs"]["input_ids"][:, student["prompt_length"]:]
-                    loss = response_cross_entropy(logits, labels, chunk_size=chunk)
-                    del logits, labels
+                    logits = response_batch_forward(model, student, pad_token_id=pad_token_id)
+                    example_losses = [response_cross_entropy(value,
+                        row["inputs"]["input_ids"][:, row["prompt_length"]:], chunk_size=chunk)
+                        for value, row in zip(logits, student)]
+                    del logits
+                # Equal example weighting matches the original accumulated objective,
+                # including variable response lengths and a partial final microbatch.
+                loss = torch.stack(example_losses).sum()
                 if not bool(torch.isfinite(loss)):
                     raise FloatingPointError("Nonfinite Android loss; no completed checkpoint published")
                 (loss / len(group)).backward()
-                losses.append(float(loss.detach().cpu()))
-                del loss, student
+                losses.extend(float(value.detach().cpu()) for value in example_losses)
+                forward_microbatches += 1
+                del loss, example_losses, student
             norm = torch.nn.utils.clip_grad_norm_(
                 (p for p in model.parameters() if p.requires_grad),
                 float(train.get("max_grad_norm", 1.0)))
@@ -330,6 +397,9 @@ def _train(checkpoint: str, examples: list[dict], output_dir: str | Path,
             "checkpoint_out": str(destination), "examples": len(examples),
             "epochs": epochs if train.get("max_updates") is None else None,
             "optimizer_steps": optimizer_steps, **exposure,
+            "microbatch_size": batch_size, "gradient_accumulation_steps": accumulation,
+            "effective_batch_size": batch_size * accumulation,
+            "forward_microbatches": forward_microbatches,
             "response_token_presentations": response_tokens,
             "student_prompt_token_presentations": student_prompt_tokens,
             "teacher_prompt_token_presentations": teacher_prompt_tokens,

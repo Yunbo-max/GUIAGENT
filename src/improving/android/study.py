@@ -138,7 +138,7 @@ def load_manifest(path: str | Path) -> dict:
     """
     from .environment import UPSTREAM_COMMIT, _digest, _semantic_params
 
-    manifest = json.loads(Path(path).expanduser().read_text())
+    manifest = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
     if not isinstance(manifest, dict) or type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 1:
         raise ValueError("Unsupported Android manifest schema")
     expected_hash = _digest({k: v for k, v in manifest.items() if k != "manifest_hash"})

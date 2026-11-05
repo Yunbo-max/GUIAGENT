@@ -1,5 +1,16 @@
 # SPECTRUM
 
+## GPU 1 throughput and memory qualification — 5 November 2026
+
+[显存参数、1/2/4/24 环境实测与限制](docs/GPU_MEMORY_AND_THROUGHPUT_ZH.md) ·
+[Opt-in four-environment config](configs/mobilegym/feedback_only_qwen4b_parallel4.json)
+
+MobileGym can overlap independent browser environments around one serialized Qwen inference thread.
+Short native tests found 4 environments faster than 1; 24 showed no additional gain over 4.
+Completed episodes can be explicitly reused from a matching sealed original study.
+These are hardware/throughput qualifications, not completed full benchmark accuracy results.
+The earlier generated-only status notes below describe the original delivery; see the dated guide for current evidence.
+
 ## Native Windows: MobileGym + AndroidWorld on NVIDIA 96GB
 
 [中文 Windows 安装指南](docs/WINDOWS_96GB_SETUP_ZH.md) ·
