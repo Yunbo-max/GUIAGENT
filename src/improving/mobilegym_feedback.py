@@ -226,29 +226,49 @@ async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: 
         return await _orig_get_state(self, required_apps=required_apps)
     MobileGymEnv.get_state = _patched_get_state
 
+    # open_app (used by single-app tasks) does NOT preload the app's Zustand store;
+    # after a page reload the store is lazily created, so alipay's store never
+    # registers and get_state(required_apps=['alipay']) fails. Preload it first.
+    _orig_open_app = MobileGymEnv.open_app
+    async def _patched_open_app(self, app_name, timeout_ms=8000, wait_stable=False):
+        try:
+            await self.page.evaluate(
+                "async (id) => { try { await window.__SIM__?.preloadAppStores?.([id]); } catch {} }",
+                app_name)
+        except Exception:
+            pass
+        return await _orig_open_app(self, app_name, timeout_ms, wait_stable)
+    MobileGymEnv.open_app = _patched_open_app
+
     if out.exists():
         raise FileExistsError(f"Refusing to overwrite episodes: {out}")
     out.mkdir(parents=True)
-    env = MobileGymEnv(
-        url=cfg["mobilegym"]["url"], headless=True, verbose=False,
-        coord_space="norm_0_1000",
-        delay_after_action=float(cfg["mobilegym"].get("delay_after_action", 0.2)))
     evaluator = Evaluator(judge_mode="state", eval_mode="grounded")
     records = []
-    await env.start()
-    await env.wait_ready()
     # Pre-warm every involved app store so their Zustand stores register before
     # the per-task reset+warm path; some apps (alipay) hydrate slowly on cold
     # preview servers and miss the native get_state retry window.
     all_apps = sorted({a for t in tasks for a in (getattr(t, "apps", None) or [])})
-    if all_apps:
-        try:
-            await env.warm_apps(all_apps)
-        except Exception:
-            pass
+
+    async def _fresh_env():
+        e = MobileGymEnv(
+            url=cfg["mobilegym"]["url"], headless=True, verbose=False,
+            coord_space="norm_0_1000",
+            delay_after_action=float(cfg["mobilegym"].get("delay_after_action", 0.2)))
+        await e.start()
+        await e.wait_ready()
+        if all_apps:
+            try:
+                await e.warm_apps(all_apps)
+            except Exception:
+                pass
+        return e
+
+    env = await _fresh_env()
     try:
         with (folded_operators(policy.model, operators)
               if operators is not None else nullcontext()):
+            episode_count = 0
             for proto in tasks:
                 for attempt in range(repeats):
                     task = _fresh_task(proto)
@@ -327,6 +347,13 @@ async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: 
                         raise
                     finally:
                         task.teardown(env)
+                        # Periodic browser restart: qz Chromium accumulates state across
+                        # many screenshot-heavy episodes and eventually dies with a silent
+                        # browser-close. Recycle it every few episodes.
+                        episode_count += 1
+                        if episode_count % 4 == 0:
+                            await env.close()
+                            env = await _fresh_env()
     finally:
         await env.close()
     _jsonl_new(out / "records.jsonl", records)
