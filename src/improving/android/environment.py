@@ -329,6 +329,9 @@ def collect_episodes(instances: list[dict], generate: Callable[[list[dict]], dic
     max_steps = int(settings.get("max_steps", 30))
     history_len = int(settings.get("history_len", 100))
     pause = float(settings.get("wait_after_action_seconds", 2.0))
+    record_timing = settings.get("collect_timing", False)
+    if type(record_timing) is not bool:
+        raise ValueError("android.collect_timing must be a boolean")
     repeats = config.get("collection", {}).get("repeats", 1)
     if type(repeats) is not int or repeats < 1:
         raise ValueError("collection.repeats must be a positive integer")
@@ -376,12 +379,18 @@ def collect_episodes(instances: list[dict], generate: Callable[[list[dict]], dic
                 history = []
                 for step_index in range(max_steps):
                     from PIL import Image
+                    loop_begin = time.perf_counter()
                     state = env.get_state(wait_to_stabilize=True)
+                    before_state_elapsed = time.perf_counter() - loop_begin
                     pixels = state.pixels
                     screenshot = episode_dir / f"step_{step_index:04d}.png"
+                    screenshot_start = time.perf_counter()
                     Image.fromarray(pixels).save(screenshot)
+                    save_before_elapsed = time.perf_counter() - screenshot_start
                     messages = build_messages(episode["goal"], screenshot, history, system_prompt, history_len)
+                    inference_begin = time.perf_counter()
                     sampled = generate(messages)
+                    inference_elapsed = time.perf_counter() - inference_begin
                     response, ids = sampled["response"], sampled["response_token_ids"]
                     if not isinstance(response, str) or not isinstance(ids, list) or any(type(t) is not int or t < 0 for t in ids):
                         raise TypeError("generate must return response text and exact nonnegative token IDs")
@@ -399,16 +408,35 @@ def collect_episodes(instances: list[dict], generate: Callable[[list[dict]], dic
                         _private_json(partial, episode)
                         continue
                     step["action"] = action
+                    adb_begin = time.perf_counter()
                     _execute_native_action(env, action_class(**action), state)
+                    adb_elapsed = time.perf_counter() - adb_begin
                     terminal = action["action_type"] in ("status", "answer")
                     step.update(done=terminal, feedback="Action submitted to AndroidWorld.", feedback_kind="action_executed")
                     history.append(action_description(response))
+                    wait_begin = time.perf_counter()
                     if pause:
                         time.sleep(pause)
+                    wait_elapsed = time.perf_counter() - wait_begin
+                    after_begin = time.perf_counter()
                     after = env.get_state(wait_to_stabilize=True)
+                    after_elapsed = time.perf_counter() - after_begin
                     after_path = episode_dir / f"step_{step_index:04d}_after.png"
+                    after_save_begin = time.perf_counter()
                     Image.fromarray(after.pixels).save(after_path)
+                    after_save_elapsed = time.perf_counter() - after_save_begin
                     step["after_screenshot"] = str(after_path)
+                    if record_timing:
+                        step["perf_seconds"] = {
+                            "before_state": before_state_elapsed,
+                            "before_png": save_before_elapsed,
+                            "model_generation": inference_elapsed,
+                            "adb_actuation": adb_elapsed,
+                            "explicit_wait": wait_elapsed,
+                            "after_state": after_elapsed,
+                            "after_png": after_save_elapsed,
+                            "total_step": time.perf_counter() - loop_begin,
+                        }
                     _private_json(partial, episode)
                     if terminal:
                         episode["terminated"] = True
@@ -418,6 +446,17 @@ def collect_episodes(instances: list[dict], generate: Callable[[list[dict]], dic
                     raise ValueError(f"Native verifier returned invalid score: {score}")
                 episode.update(native_score=score, success=bool(episode["terminated"] and score == 1.0),
                                status="complete", elapsed_seconds=time.monotonic()-started)
+                if record_timing:
+                    labels = ("before_state","before_png","model_generation","adb_actuation",
+                              "explicit_wait","after_state","after_png","total_step")
+                    episode["timing_totals_seconds"] = {
+                        key: sum(step.get("perf_seconds", {}).get(key,0.0)
+                                 for step in episode["steps"]) for key in labels
+                    }
+                    episode["timing_definition"] = (
+                        "wall_clock_per_step; model_generation_includes_processor;"
+                        "ADB_env_get_state_may_include_simulator_CPU_and_network;"
+                        "no_CUDA_sync_side_effect_introduced")
                 _private_json(episode_dir / "episode.json", episode, exclusive=True)
                 partial.unlink()
                 episodes.append(episode)
