@@ -17,6 +17,8 @@ import time
 
 from .assets import atomic_json, file_sha256, resolve_checkpoint, verify_upstream
 from .tau import resolve_tau, validate_tau_settings
+from .windows_sdk import resolve_sdk_settings
+from .portable_lock import exclusive_run_lock
 
 LEGACY_ARMS = ("ui_voyager", "feedback_spectrum")
 ARMS = LEGACY_ARMS + ("feedback_spectrum_tau", "feedback_spectrum_gated")
@@ -116,6 +118,7 @@ def load_config(path: str | Path) -> dict:
     for key in ("output_dir", "manifest", "assets_receipt"):
         value = Path(config[key]).expanduser()
         config[key] = str(value.resolve() if value.is_absolute() else (root / value).resolve())
+    config["android"] = resolve_sdk_settings(config["android"])
     for key in ("upstream_root",):
         value = Path(config["android"][key]).expanduser()
         config["android"][key] = str(value.resolve() if value.is_absolute() else (root / value).resolve())
@@ -233,17 +236,9 @@ def seal_study(root: Path, config: dict, manifest: dict, source: str, inputs: di
 
 @contextmanager
 def study_lock(root: Path):
-    import fcntl
-    root.mkdir(parents=True, exist_ok=True)
-    with (root / ".run.lock").open("a+") as stream:
-        try:
-            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise RuntimeError("Another process owns this Android study") from error
-        try:
-            yield
-        finally:
-            fcntl.flock(stream, fcntl.LOCK_UN)
+    """Advisory nonblocking lock on Windows and POSIX."""
+    with exclusive_run_lock(root / ".run.lock"):
+        yield
 
 
 def read_complete_stage(path: Path) -> dict | None:
