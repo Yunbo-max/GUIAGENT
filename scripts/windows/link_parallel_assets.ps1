@@ -1,0 +1,25 @@
+# Prepare a SEPARATE native Windows Git worktree for AndroidWorld optimization.
+# No overwrites: only create data/models junctions to EXISTING read-only assets.
+# Keep original active MobileGym process/source tree completely untouched.
+param([Parameter(Mandatory=$true)][string]$OriginalRepo)
+$ErrorActionPreference="Stop"
+if($env:OS -ne "Windows_NT"){throw "Native Windows required"}
+$Root=(Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$Original=(Resolve-Path $OriginalRepo).Path
+if($Root -eq $Original){throw "Optimization must run from a separate worktree, not the original active checkout."}
+if(!(Test-Path (Join-Path $Original "src\improving\mobilegym_feedback.py"))){
+  throw "Original source checkout not found at $Original"
+}
+foreach($name in @("data","models")){
+  $target=Join-Path $Original $name
+  $newpath=Join-Path $Root $name
+  if(!(Test-Path $target)){throw "Required original asset directory missing: $target"}
+  if(Test-Path $newpath){throw "Refusing to replace existing path: $newpath"}
+  New-Item -ItemType Junction -Path $newpath -Target $target | Out-Null
+  Write-Host "Read-only intended asset link: $newpath -> $target" -ForegroundColor Cyan
+}
+$Py=Join-Path $Original ".venv-guiagent\Scripts\python.exe"
+if(!(Test-Path $Py)){throw "Original Python 3.11 environment missing: $Py"}
+Write-Host "Asset links ready. The current original run remains untouched." -ForegroundColor Green
+Write-Host "Use this venv interpreter for new-worktree commands: & '$Py' ..."
+Write-Host "Do not run AndroidWorld on an AVD already controlled by the original collector." -ForegroundColor Yellow

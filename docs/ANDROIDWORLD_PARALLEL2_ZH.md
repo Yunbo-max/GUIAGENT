@@ -1,3 +1,38 @@
+# AndroidWorld 双 AVD 加速 — 纯 Windows
+
+**注意：已经运行的 Python 进程无法通过 GitHub 更新而突然加速。**
+这套代码在独立 Git 分支 / 新的输出目录中。不要覆盖当前 AndroidWorld
+已采集的轨迹，不要修改正在运行 MobileGym 的原始源码目录。
+
+**最安全的获取方式：新建 Windows worktree，共用只读模型/数据资源。**
+
+在当前原仓库的 PowerShell 窗口执行以下命令；这里不修改原 worktree：
+
+    $old = (Get-Location).Path
+    git fetch origin feature/androidworld-two-avd-throughput-20261105
+    git worktree add ..\GUIAGENT-AVD2 origin/feature/androidworld-two-avd-throughput-20261105
+    Set-Location ..\GUIAGENT-AVD2
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/link_parallel_assets.ps1 -OriginalRepo $old
+    $py = Join-Path $old ".venv-guiagent\Scripts\python.exe"
+
+上述脚本只为新 worktree 创建 data 和 models 的 NTFS Junction；不复制权重、
+不修改旧实验输出、不触碰活跃 MobileGym 进程。生成结果放在新 worktree
+下的 runs，不与旧结果混用。如果原目录或新的 data/models 路径有冲突，
+脚本会直接报错，禁止覆盖。
+
+**先让原 AndroidWorld collector 在安全边界停止并释放 AVD1，再准备 AVD2；
+MobileGym 可以继续运行。** 随后用新 worktree 的 Python 依次执行：
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/start_androidworld_parallel2.ps1 -InstallSecondAVD
+    & $py scripts/run_androidworld_feedback.py --config configs/android/androidworld_feedback_learned_windows_pilot_parallel2.json setup-env
+    & $py scripts/run_androidworld_feedback.py --config configs/android/androidworld_feedback_learned_windows_pilot_parallel2.json env-check
+    & $py scripts/windows/bench_androidworld_throughput.py --mode both
+
+A/B 的原生成功数、动作量和平均耗时写入
+runs/androidworld_windows/avd_ab_probe_v1/report.json。先判断是否真有吞吐收益，
+不要先启动数千条轨迹的正式实验。只有 A/B 通过，再运行新的 2-AVD
+Pilot / Full。原来已经完成的记录仍保存在旧目录。
+
 # AndroidWorld CPU/AVD throughput pilot — pure Windows
 
 This additive experiment compares the original single AndroidWorld
