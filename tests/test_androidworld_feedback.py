@@ -57,3 +57,16 @@ def test_moment_fit_guard_tasks_do_not_overlap():
     assert fit and guard
     assert {x["instance_id"] for x in fit}.isdisjoint(
         {x["instance_id"] for x in guard})
+
+def test_windows_config_loader_is_separate_from_legacy_arm_validation(monkeypatch):
+    import improving.androidworld_feedback as study
+    from improving.android import windows_sdk
+    sample = cfg("androidworld_feedback_learned_windows_pilot_96gb.json")
+    monkeypatch.setattr(windows_sdk, "resolve_sdk_settings", lambda raw: {
+        **raw, **{key: "mock" for key in
+        ("adb_path","emulator_path","android_sdk_root","android_avd_home")}
+    })
+    # The old android.study.load_config rejects the new arm names. This
+    # runner must use its own validated opt-in protocol.
+    assert study.validate(sample)["study"]["arms"] == list(ARMS)
+

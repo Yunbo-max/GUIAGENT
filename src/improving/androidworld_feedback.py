@@ -59,8 +59,23 @@ def _verify_episode_population(episodes: list[dict], instances: list[dict],
 
 
 def _config(path: str | Path) -> dict:
-    from improving.android.study import load_config
-    return load_config(path)
+    """Expand paths without invoking the older UI-Voyager-only arm validator."""
+    from improving.android.windows_sdk import resolve_sdk_settings
+    value = json.loads(Path(path).expanduser().resolve().read_text(encoding="utf-8"))
+    repo = Path(__file__).resolve().parents[2]
+    for name in ("output_dir", "manifest", "assets_receipt"):
+        p = Path(value[name]).expanduser()
+        value[name] = str(p.resolve() if p.is_absolute() else (repo / p).resolve())
+    android = dict(value["android"])
+    upstream = Path(android["upstream_root"]).expanduser()
+    android["upstream_root"] = str(
+        upstream.resolve() if upstream.is_absolute() else (repo / upstream).resolve())
+    value["android"] = resolve_sdk_settings(android)
+    model = value["model"]
+    checkpoint = Path(model["checkpoint"]).expanduser()
+    model["checkpoint"] = str(
+        checkpoint.resolve() if checkpoint.is_absolute() else (repo / checkpoint).resolve())
+    return validate(value)
 
 
 def validate(cfg: dict) -> dict:
