@@ -139,6 +139,8 @@ def collect_parallel(cfg: dict, *, checkpoint: str, instances: list[dict],
     from improving.android.data import validate_episodes
     from improving.androidworld_feedback import _verify_episode_population
     from improving.android.assets import file_sha256
+    import time
+    collection_started = time.perf_counter()
     from improving.androidworld_feedback import _write_json
 
     devices=parse_worker_devices(cfg["android"])
@@ -206,6 +208,7 @@ def collect_parallel(cfg: dict, *, checkpoint: str, instances: list[dict],
             f.write(json.dumps(row,ensure_ascii=False,allow_nan=False,sort_keys=True)+"\n")
     _write_json(path/"complete.json",{
         "status":"complete","episodes":len(ordered),
+        "elapsed_seconds":time.perf_counter()-collection_started,
         "episodes_sha256":file_sha256(path/"episodes.jsonl"),
         "workers":reports,"dispatch_sha256":file_sha256(path/"dispatch.json"),
         "score":"verified_native_AndroidWorld_not_model_self_report",
