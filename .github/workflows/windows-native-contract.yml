@@ -1,0 +1,54 @@
+name: Native Windows GUI benchmark contracts
+
+on:
+  push:
+    paths:
+      - '.github/workflows/windows-native-contract.yml'
+      - 'src/improving/android/**'
+      - 'src/improving/androidworld_feedback.py'
+      - 'scripts/run_androidworld_feedback.py'
+      - 'scripts/windows/**'
+      - 'configs/android/androidworld_feedback_learned_windows*.json'
+      - 'tests/test_android_windows_native.py'
+      - 'tests/test_androidworld_feedback.py'
+      - 'tests/test_windows_gui_contract.py'
+  pull_request:
+    paths:
+      - '.github/workflows/windows-native-contract.yml'
+      - 'src/improving/android/**'
+      - 'src/improving/androidworld_feedback.py'
+      - 'scripts/windows/**'
+      - 'configs/android/androidworld_feedback_learned_windows*.json'
+  workflow_dispatch:
+
+jobs:
+  syntax-and-portable-lock:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Source and JSON contract AST
+        run: python scripts/windows/static_check.py
+      - name: Windows PowerShell source parsing (no installation)
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem scripts/windows -Filter *.ps1
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              foreach ($err in $errors) { Write-Error $err.ToString() }
+              throw "PowerShell parsing failed: $($file.FullName)"
+            }
+          }
+      - name: Install CPU-only testing dependency
+        run: python -m pip install "pytest>=8,<10"
+      - name: Portable lock and source schema CPU tests
+        env:
+          PYTHONPATH: src
+        run: python -m pytest tests/test_android_windows_native.py tests/test_windows_gui_contract.py -q
