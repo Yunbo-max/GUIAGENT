@@ -1,5 +1,20 @@
 # SPECTRUM
 
+## 16-sample GUI self-improvement protocol (Round 0 and every refinement round)
+
+[中文/English 16-sample experiment guide](docs/GUI_SAMPLES16_ROUND0.md) ·
+[Offline budget and fidelity verifier](scripts/gui_sample_budget16.py) ·
+[MobileGym Full 16-sample config](configs/mobilegym/feedback_only_qwen4b_parallel4_samples16.json) ·
+[AndroidWorld Full 16-sample config](configs/android/androidworld_feedback_learned_windows_full_parallel2_samples16.json)
+
+Round 0 collects 16 native episodes per training instance; every subsequent
+round samples 16 attempts, split **8 native + 8 spectral** (while Feedback SD
+uses **16 native**). The "native" policy always uses each method's **current
+post-distillation checkpoint**, not the initial Round-0 model. All configs are
+opt-in and have separate output roots; they do NOT modify active 4-sample runs.
+The training-rollout budget rises 4x, and actual completion time is unknown.
+
+
 ## Opt-in native Windows AndroidWorld dual-AVD throughput experiment
 
 [Two-emulator CPU/sampling plan](docs/ANDROIDWORLD_PARALLEL2_ZH.md) ·

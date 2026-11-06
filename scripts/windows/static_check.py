@@ -21,6 +21,8 @@ PYFILES=(
  "tests/test_android_parallel_collection.py",
  "scripts/windows/inspect_androidworld_progress.py",
  "scripts/windows/bench_androidworld_throughput.py",
+ "scripts/gui_sample_budget16.py",
+ "tests/test_gui_sample_budget16.py",
  "tests/test_android_progress_reader.py",
  "tests/test_android_throughput.py",
 )
@@ -76,9 +78,17 @@ def check():
         raise ValueError("Full/pilot roots must be disjoint")
     if mobile["output_dir"]==mobile_pilot["output_dir"]:
         raise ValueError("MobileGym full/pilot roots must be disjoint")
+    # Also inspect opt-in 16-sample full/pilot protocols without CUDA.
+    import runpy
+    methods = runpy.run_path(str(ROOT/"scripts/gui_sample_budget16.py"))
+    methods["compare_only_sampling_changes"](ROOT)
+    budgets = {name: methods["plan"](name,root=ROOT)
+               for name in methods["CONFIGS"]}
+    if any(item["round0"]["native_per_instance"] != 16 for item in budgets.values()):
+        raise ValueError("Round0 sampling contract changed")
     return {"status":"static_checks_passed","python_files":len(PYFILES),
-            "json_configs":len(FILES),"windows_emulator_tested":False,
-            "gpu_trained":False}
+            "json_configs":len(FILES)+len(budgets),"windows_emulator_tested":False,
+            "gpu_trained":False,"samples16_static_plan_checked":True}
 
 if __name__=="__main__":
     print(json.dumps(check(),indent=2))
