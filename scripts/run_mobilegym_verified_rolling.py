@@ -35,6 +35,22 @@ def _episodes_summary(episodes: list[dict]) -> dict:
         and not e["judge"].get("clean", True)
         for e in episodes
     )
+    overdue = sum(
+        bool(e.get("judge", {}).get("success")
+             and not e.get("success")
+             and e.get("max_steps_effective")
+             and len(e.get("steps", [])) >= e["max_steps_effective"])
+        for e in episodes
+    )
+    by_difficulty = {}
+    for difficulty in ("L1", "L2", "L3", "L4"):
+        subset = [e for e in episodes if e.get("difficulty") == difficulty]
+        if subset:
+            by_difficulty[difficulty] = {
+                "tasks": len(subset),
+                "success_rate": sum(bool(e.get("success")) for e in subset) / len(subset),
+                "progress_mean": sum(float(e["judge"].get("progress", 0)) for e in subset) / len(subset),
+            }
     return {
         "test_tasks": total, "success": success,
         "sr": success / total,
@@ -42,8 +58,11 @@ def _episodes_summary(episodes: list[dict]) -> dict:
         "progress_covered": len(progress),
         "false_complete_count": false_complete,
         "unexpected_side_effect_episode_count": side_effects,
+        "overdue_termination_count": overdue,
         "incomplete": errors,
         "total_steps": sum(len(e.get("steps", [])) for e in episodes),
+        "mean_steps": sum(len(e.get("steps", [])) for e in episodes) / total,
+        "by_difficulty": by_difficulty,
         "note": "Task progress and native completion are distinct; no test feedback enters learning",
     }
 
