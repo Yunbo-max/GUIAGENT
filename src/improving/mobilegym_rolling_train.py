@@ -198,8 +198,7 @@ def train_rolling(config: dict, dataset_path: str | Path) -> dict:
             "future_label_ce_weight": ce_future,
             "peak_cuda_allocated_bytes": peak,
             "elapsed_seconds": time.monotonic() - started,
-            "trainable_parameters": sum(
-                p.numel() for p in model.parameters() if p.requires_grad),
+            "trainable_parameters": trainable_parameters,
             "lora_target_modules": targets,
             "sampling": exposure,
         }
