@@ -314,6 +314,7 @@ async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: 
                     initial, params = await _setup_with_retry(env, task)
                     ep["instance_id"] = _digest([task.id, params, task.description])
                     ep["goal"] = task.description
+                    ep["difficulty"] = getattr(task, "difficulty", None)
                     # Interim judge is TRAIN-ONLY and opt-in. The online actor
                     # still receives screenshots and action history alone.
                     capture_interim = (
