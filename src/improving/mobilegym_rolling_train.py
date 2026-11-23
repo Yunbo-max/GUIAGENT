@@ -168,6 +168,8 @@ def train_rolling(config: dict, dataset_path: str | Path) -> dict:
             int(torch.cuda.max_memory_allocated(policy.device))
             if policy.device.type == "cuda" else None
         )
+        trainable_parameters = sum(
+            p.numel() for p in model.parameters() if p.requires_grad)
         model.gradient_checkpointing_disable()
         merged = model.merge_and_unload(safe_merge=True)
         policy.model = merged
