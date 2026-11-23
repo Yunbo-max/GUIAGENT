@@ -346,6 +346,7 @@ async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: 
                     else:
                         max_steps = min(cfg["study"]["max_steps"],
                                         getattr(task, "max_steps", None) or cfg["study"]["max_steps"])
+                    ep["max_steps_effective"] = max_steps
                     for i in range(max_steps):
                         screenshot = directory / f"step_{i:03d}.jpg"
                         image = obs.get_screenshot_bytes()
