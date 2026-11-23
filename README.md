@@ -1,5 +1,24 @@
 # SPECTRUM
 
+## MobileGym Verified Rolling Action Distillation (VRAD) — new opt-in study
+
+[中文实验与运行指南](docs/MOBILEGYM_VERIFIED_ROLLING_20261123_ZH.md) ·
+[单卡 97GB 全量配置](configs/mobilegym/verified_rolling_4b_97gb.json) ·
+[Next-Action-only 消融](configs/mobilegym/verified_next_action_ablation_4b_97gb.json) ·
+[SOTA baseline 状态与协议](configs/mobilegym/sota_baselines_20261123.json) ·
+[训练/评测入口](scripts/run_mobilegym_verified_rolling.py)
+
+The new verified rolling study collects **real MobileGym train-only interim
+progress** and distils frozen hindsight-conditioned Qwen3-VL-4B distributions
+into a native LoRA student. It uses one current executable action plus
+horizon-conditioned semantic future action-type predictions (NOT native
+parallel MTP heads, GRPO or a state world model). The formal plan requests
+160 train templates x 8 native rollouts and 256 held-out test tasks.
+CPU test contracts passed on GitHub Actions; a real GPU/browser full run has
+not been executed or validated by this code delivery. Existing benchmarks and
+SPECTRUM outcomes are preserved, and external Android SOTA ports are tracked
+as pending rather than falsely reported as completed.
+
 ## 16-sample GUI self-improvement protocol (Round 0 and every refinement round)
 
 [中文/English 16-sample experiment guide](docs/GUI_SAMPLES16_ROUND0.md) ·
