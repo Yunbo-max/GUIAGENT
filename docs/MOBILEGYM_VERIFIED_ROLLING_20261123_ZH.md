@@ -4,7 +4,7 @@
 
 ## 中文说明：我们现在真正要跑什么
 
-研究主线是 **Verified Rolling Action Distillation（VRAD）**，即在 MobileGym 训练任务中执行真实动作、读取每一步程序化 Verifier 的进度变化，再把后续实际执行得到的信息作为冻结 Teacher 的特权上下文，通过 Soft-KL 蒸馏到只看当前截图的 Student。
+研究主线是 **Verified Rolling Action Distillation（VRAD）**，即在 MobileGym 训练任务中执行真实动作、读取每一步程序化 Verifier 的进度变化，再把真实执行后的截图、动作与 Verifier 进度作为冻结 Teacher 的特权上下文，通过 Soft-KL 蒸馏到只看当前截图的 Student。
 
 - 输入与推理：Qwen3-VL-4B 输入当前截图、任务目标、历史动作；一次只执行一个可操作 Action，然后获取真实下一张截图。
 - 训练数据：160 个正式训练模板 × 每任务 8 条 Native 轨迹，计划采集 1280 条完整训练尝试。训练过程绝不使用 256 个测试任务的 Verifier。
@@ -50,9 +50,12 @@ history) and outputs ONE executable action. The simulator executes it. During
 records progress BEFORE and AFTER each executed action. An offline builder looks
 ahead 8 actual steps, admits only prefixes with observed progress gains, and
 creates current-action and horizon-conditioned future-action-type targets.
+The collector also writes each post-action screenshot (as a training artifact),
+so the teacher may condition on the actual future screenshot while the student
+never receives it.
 
 The privileged frozen teacher sees verified hindsight (executed action types
-and observed progress), while the student sees the original screenshot/history
+and observed progress), including actual post-action screenshots (if present), while the student sees the original screenshot/history
 plus a horizon request. No held-out task, simulator state or hidden answers are
 in the student input. Neither teacher nor student simulates a future screenshot.
 
