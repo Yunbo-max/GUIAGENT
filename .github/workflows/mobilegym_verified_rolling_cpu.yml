@@ -22,6 +22,6 @@ jobs:
           python -m pip install -e . "pytest>=8,<9"
       - name: Syntax check
         run: |
-          python -m compileall -q src/improving/mobilegym_rolling.py src/improving/mobilegym_rolling_train.py src/improving/mobilegym_step_verify.py scripts/run_mobilegym_verified_rolling.py tests/test_mobilegym_rolling.py
+          python -m compileall -q src/improving/mobilegym_rolling.py src/improving/mobilegym_rolling_train.py src/improving/mobilegym_step_verify.py scripts/run_mobilegym_verified_rolling.py scripts/compare_mobilegym_evals.py tests/test_mobilegym_rolling.py tests/test_mobilegym_eval_compare.py
       - name: Verify train/test isolation and progress gates
-        run: python -m pytest tests/test_mobilegym_rolling.py -q
+        run: python -m pytest tests/test_mobilegym_rolling.py tests/test_mobilegym_eval_compare.py -q
