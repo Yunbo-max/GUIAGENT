@@ -1,5 +1,15 @@
 # Current Local runbook: three code families and one 27B reasoning model
 
+## Entry routing for the independent Qwen0.8 GUI task
+
+For `src/improving/gui_decision`, follow
+[the Qwen0.8 dual-head Local guide](docs/GUI_DECISION_QWEN08_ZH.md) and
+[its round handoff](rounds/20261123-qwen08-dualhead/WEB_HANDOFF.md), including
+[downloads](docs/GUI_DECISION_QWEN08_ZH.md#4-download-datasets-and-models).
+That task has its own environment, AndroidControl data, RTX 2060 qualification
+and generated_unexecuted status. The studies and instructions below remain their
+historical scope; they are not a launch queue for the new output-head adapter.
+
 Decision: 27 October 2026. Repo: **Yunbo-max/SPECTRUM**, branch **main**.
 Read [the current handoff](rounds/20261027-multidomain/WEB_HANDOFF.md) at the delivered commit.
 Status: **generated_unexecuted**. Web prepared/reviewed source, but did not run

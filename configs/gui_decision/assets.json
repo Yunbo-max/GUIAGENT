@@ -1,0 +1,179 @@
+{
+  "qwen": {
+    "repo_id": "Qwen/Qwen3.5-0.8B",
+    "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+    "required_files": [
+      "config.json",
+      "tokenizer.json",
+      "tokenizer_config.json",
+      "preprocessor_config.json",
+      "chat_template.jinja",
+      "model.safetensors.index.json"
+    ]
+  },
+  "arguments": {
+    "repo_id": "LilCC/GUI-JEPA",
+    "revision": "a2265ca26dbea66fc59c46240a90d3be5defdb9e",
+    "allow_patterns": [
+      "span_ranker/*",
+      "metadata/app_vocab.json",
+      "gui_jepa_config.json",
+      "SHA256SUMS",
+      "manifest.json",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md",
+      "licenses/*"
+    ],
+    "required_files": [
+      "span_ranker/ranker_head.pt",
+      "span_ranker/ranker_lm/config.json",
+      "span_ranker/ranker_lm/model.safetensors",
+      "span_ranker/ranker_lm/tokenizer.json",
+      "span_ranker/ranker_lm/tokenizer_config.json",
+      "metadata/app_vocab.json",
+      "SHA256SUMS"
+    ]
+  },
+  "androidcontrol": {
+    "bucket": "gresearch",
+    "objects": [
+      {
+        "name": "android_control/android_control-00000-of-00020",
+        "generation": "1717537205165914",
+        "size": "2492987829",
+        "md5Hash": "QuhP+X5aiP+iD5amlNM6tA=="
+      },
+      {
+        "name": "android_control/android_control-00001-of-00020",
+        "generation": "1717537500637737",
+        "size": "2381590403",
+        "md5Hash": "YEgUqLKmkb3Myu+sn8w9Hw=="
+      },
+      {
+        "name": "android_control/android_control-00002-of-00020",
+        "generation": "1717537877247114",
+        "size": "2524501320",
+        "md5Hash": "mRohMITXMgOv5lW9uKZJzg=="
+      },
+      {
+        "name": "android_control/android_control-00003-of-00020",
+        "generation": "1717538172092003",
+        "size": "2521787571",
+        "md5Hash": "1iHt5nD8mJDebNXfbj+J9A=="
+      },
+      {
+        "name": "android_control/android_control-00004-of-00020",
+        "generation": "1717538447138615",
+        "size": "2492154967",
+        "md5Hash": "ZSFUhsEdL1vVQJFe2LqxHQ=="
+      },
+      {
+        "name": "android_control/android_control-00005-of-00020",
+        "generation": "1717538744465503",
+        "size": "2494079253",
+        "md5Hash": "cYA4TqdZfFsjB7W4EG0mGQ=="
+      },
+      {
+        "name": "android_control/android_control-00006-of-00020",
+        "generation": "1717539074311832",
+        "size": "2581962545",
+        "md5Hash": "7JbtvucLhWuXtqBbzgHMlQ=="
+      },
+      {
+        "name": "android_control/android_control-00007-of-00020",
+        "generation": "1717539507177189",
+        "size": "2676941243",
+        "md5Hash": "2HNcLWRLKhv0UThR5794aA=="
+      },
+      {
+        "name": "android_control/android_control-00008-of-00020",
+        "generation": "1717539815868564",
+        "size": "2483337369",
+        "md5Hash": "yZOE6/Ovq/pmw5LKS1YlLg=="
+      },
+      {
+        "name": "android_control/android_control-00009-of-00020",
+        "generation": "1717540230695334",
+        "size": "2630264084",
+        "md5Hash": "e18whCgrcbQPau+20rST7Q=="
+      },
+      {
+        "name": "android_control/android_control-00010-of-00020",
+        "generation": "1717540606015314",
+        "size": "2495033402",
+        "md5Hash": "bYj0TvfhuOWPEMDn5rebZw=="
+      },
+      {
+        "name": "android_control/android_control-00011-of-00020",
+        "generation": "1717540936822111",
+        "size": "2418884116",
+        "md5Hash": "WTUWA7Mb43BC136dE1dtbQ=="
+      },
+      {
+        "name": "android_control/android_control-00012-of-00020",
+        "generation": "1717541240506712",
+        "size": "2503753753",
+        "md5Hash": "WHKZpHKm7J2TPT1KcGViuA=="
+      },
+      {
+        "name": "android_control/android_control-00013-of-00020",
+        "generation": "1717541655245559",
+        "size": "2516494995",
+        "md5Hash": "XJsXkpP/+XuN+tSu/tbBAQ=="
+      },
+      {
+        "name": "android_control/android_control-00014-of-00020",
+        "generation": "1717541918186796",
+        "size": "2453866804",
+        "md5Hash": "7mIiIt7gp06xBCaBESPb6Q=="
+      },
+      {
+        "name": "android_control/android_control-00015-of-00020",
+        "generation": "1717542237746755",
+        "size": "2345501105",
+        "md5Hash": "fpY5ZABCLM6bNS6m3Yi3uA=="
+      },
+      {
+        "name": "android_control/android_control-00016-of-00020",
+        "generation": "1717542722987392",
+        "size": "2398778868",
+        "md5Hash": "B5GCzf12qeGXgWEf0Adu1w=="
+      },
+      {
+        "name": "android_control/android_control-00017-of-00020",
+        "generation": "1717543085141265",
+        "size": "2421224827",
+        "md5Hash": "4WtwF/Tx1c48pKyH/SGF5Q=="
+      },
+      {
+        "name": "android_control/android_control-00018-of-00020",
+        "generation": "1717543461446530",
+        "size": "2538585489",
+        "md5Hash": "Q8JvIFjosrJjLUKu9fgxgg=="
+      },
+      {
+        "name": "android_control/android_control-00019-of-00020",
+        "generation": "1717543885076524",
+        "size": "2558503032",
+        "md5Hash": "xuJJrmWvdUT1zlKYsKN0pg=="
+      },
+      {
+        "name": "android_control/splits.json",
+        "generation": "1717536900388589",
+        "size": "98603",
+        "md5Hash": "0Xn03OtQxw3DHeE3a90rkg=="
+      },
+      {
+        "name": "android_control/test_subsplits.json",
+        "generation": "1723564107024194",
+        "size": "18414",
+        "md5Hash": "Fa/XPr5xSdHf8cGiS1zp3Q=="
+      }
+    ]
+  },
+  "gui_jepa_source": {
+    "repository": "bcwang-sjtu/GUI-JEPA",
+    "commit": "dae79af4598962b9a5112b0bef297b588592192d",
+    "tree": "914b405017a061cb654607122124702f18ded5ce"
+  }
+}

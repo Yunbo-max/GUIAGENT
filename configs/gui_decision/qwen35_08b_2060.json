@@ -1,0 +1,58 @@
+{
+  "status": "generated_unexecuted",
+  "model": {
+    "model_id": "Qwen/Qwen3.5-0.8B",
+    "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+    "device": "cuda:0",
+    "backbone_dtype": "float16",
+    "attn_implementation": "sdpa",
+    "min_pixels": 4096,
+    "max_pixels": 262144,
+    "max_length": 8192,
+    "candidate_text_max_chars": 128,
+    "local_files_only": true,
+    "head": {
+      "hidden_size": 1024,
+      "projection_dim": 256,
+      "aux_dim": 11,
+      "num_action_types": 8,
+      "type_embedding_dim": 32,
+      "dropout": 0.0
+    }
+  },
+  "assets": {
+    "pins": "configs/gui_decision/assets.json",
+    "root": "data/gui_decision/assets"
+  },
+  "data": {
+    "raw_dir": "data/gui_decision/androidcontrol_raw",
+    "prepared_dir": "data/gui_decision/androidcontrol",
+    "cache_root": "data/gui_decision/qwen08_features"
+  },
+  "arguments": {
+    "app_vocab": "data/gui_decision/androidcontrol/app_vocab.json",
+    "mode": "span_ranker",
+    "span_checkpoint": "data/gui_decision/assets/gui_jepa",
+    "device": "cpu",
+    "max_span_words": 16,
+    "span_cap": 800,
+    "span_batch_size": 64
+  },
+  "dual_head": {
+    "gate_kind": "explicit_prompt",
+    "default_route": "PLAN_ACT",
+    "max_plan_tokens": 64,
+    "planner_training": "frozen_original_language_head"
+  },
+  "training": {
+    "device": "cuda:0",
+    "epochs": 6,
+    "batch_size": 32,
+    "learning_rate": 0.0001,
+    "weight_decay": 0.01,
+    "max_grad_norm": 1.0,
+    "nonclick_weight": 1.5,
+    "seed_file": "runs/private/gui_decision_seed.json",
+    "output_dir": "runs/gui_decision/qwen35_08b_head"
+  }
+}

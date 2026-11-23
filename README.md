@@ -1,5 +1,20 @@
 # SPECTRUM
 
+## Local Codex: start here — Qwen3.5-0.8B GUI dual head
+
+[中文运行与方法指南](docs/GUI_DECISION_QWEN08_ZH.md) ·
+[下载数据和模型](docs/GUI_DECISION_QWEN08_ZH.md#4-download-datasets-and-models) ·
+[本轮交接](rounds/20261123-qwen08-dualhead/WEB_HANDOFF.md) ·
+[2060 初始配置](configs/gui_decision/qwen35_08b_2060.json) ·
+[CLI](scripts/gui_decision.py)
+
+An additive AndroidControl adapter uses one frozen Qwen3.5-0.8B backbone with
+the original language head for planning and a trainable variable-candidate
+decision head. Explicit `PLAN`, `ACT`, and `PLAN_ACT` prompts select the route.
+This is **generated_unexecuted** source: native tests, GPU memory, training and
+benchmark results remain pending. The current router is not a learned gate.
+The historical studies below retain their existing configurations and results.
+
 ## Native Windows: MobileGym + AndroidWorld on NVIDIA 96GB
 
 [中文 Windows 安装指南](docs/WINDOWS_96GB_SETUP_ZH.md) ·

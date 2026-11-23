@@ -1,5 +1,24 @@
 # SPECTRUM current agent entry
 
+## Qwen3.5-0.8B output-head / dual-head task
+
+For the independent `gui_decision` implementation, read the scoped
+[Local guide](docs/GUI_DECISION_QWEN08_ZH.md), its
+[download section](docs/GUI_DECISION_QWEN08_ZH.md#4-download-datasets-and-models), and
+[round handoff](rounds/20261123-qwen08-dualhead/WEB_HANDOFF.md) at the delivered revision.
+Scope: AndroidControl candidate/action/scorer adaptation, frozen Qwen0.8B + new
+decision head, retained original planning head, explicit prompt routing.
+No learned gate, OPSD, planner training or emulator experiment is implied.
+The implementation is generated_unexecuted; source/static review and authored
+fixtures are not runtime or scientific acceptance. Native Local verification
+must use the actual RTX 2060 inventory, isolated requirements/gui_decision.txt,
+pinned assets, complete selected benchmark and the original eligible denominators.
+Do not mix legacy training environments, drop difficult test cases, feed current
+GT into planning/inference, or infer GPU capacity from older 96GB studies.
+Preserve the historical studies and all running jobs/results. This additive Web
+delivery uses this repository's main with expected-head publication/readback;
+the historical Android branch-only rule below belongs to that earlier study.
+
 ## This branch: Android experiment
 
 For `android-feedback-spectrum`, use [the Android runbook](docs/ANDROID_UI_VOYAGER_ZH.md)
