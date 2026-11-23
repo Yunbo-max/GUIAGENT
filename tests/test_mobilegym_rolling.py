@@ -34,6 +34,7 @@ def episode(split="train", *, good=True, verified=True):
             "response": "an executed sampled action",
             "response_token_ids": [25, 26],
             "action": {"action_type": "CLICK", "data": {"point": [10 + i, 20]}},
+            "next_screenshot": f"/teacher-only/after{i}.jpg",
             "verification": {
                 "status": "verified" if verified else "invalid",
                 "progress_before": points[i],
@@ -164,3 +165,41 @@ def test_single_gpu_formal_config_matches_160_256():
     assert cfg["mobilegym"]["official_rl_step_budgets"] is True
     assert cfg["rolling"]["capture_step_verifier"] is True
     assert cfg["model"]["device"] == "cuda:0"
+
+
+def test_future_screen_is_teacher_only_and_never_leaks_to_student():
+    from improving.mobilegym_rolling_train import _encode_pair
+
+    rows, _ = build_examples([episode()])
+    row = next(r for r in rows if r["objective"] == "future_action_type_kl")
+
+    class Tokenizer:
+        eos_token_id = 2
+        def encode(self, text, add_special_tokens=False):
+            assert text == "CLICK"
+            return [99]
+
+    class Policy:
+        processor = SimpleNamespace(tokenizer=Tokenizer())
+        calls = []
+        def encode(self, messages, ids, feedback=None):
+            self.calls.append((messages, ids, feedback))
+            return {"ids": ids}
+
+    policy = Policy()
+    _encode_pair(policy, row)
+    assert len(policy.calls) == 2
+    student_messages, _, student_feedback = policy.calls[0]
+    teacher_messages, _, teacher_feedback = policy.calls[1]
+    assert student_feedback is None
+    assert teacher_feedback
+    assert not any(
+        block.get("image", "").startswith("/teacher-only")
+        for block in student_messages[-1]["content"]
+        if isinstance(block, dict)
+    )
+    assert any(
+        block.get("image", "").startswith("/teacher-only")
+        for block in teacher_messages[-1]["content"]
+        if isinstance(block, dict)
+    )
