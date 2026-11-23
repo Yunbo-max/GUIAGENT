@@ -25,9 +25,9 @@ def _episodes_summary(episodes: list[dict]) -> dict:
     ]
     errors = sum(e.get("status") != "complete" for e in episodes)
     false_complete = sum(
-        not e.get("success") and e.get("steps")
-        and isinstance(e["steps"][-1].get("action"), dict)
-        and e["steps"][-1]["action"].get("action_type") == "COMPLETE"
+        bool(not e.get("success") and e.get("steps")
+             and isinstance(e["steps"][-1].get("action"), dict)
+             and e["steps"][-1]["action"].get("action_type") == "COMPLETE")
         for e in episodes
     )
     side_effects = sum(
