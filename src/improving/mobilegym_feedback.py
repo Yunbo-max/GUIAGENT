@@ -379,6 +379,14 @@ async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: 
                         step["done"] = bool(result.done)
                         step["feedback_kind"] = "action_executed"
                         if capture_interim:
+                            # Preserve the ACTUAL post-action screen for
+                            # training-only hindsight teacher conditioning.
+                            # This screenshot is never included in actor msg.
+                            post_bytes = result.observation.get_screenshot_bytes()
+                            if post_bytes:
+                                post_path = directory / f"step_{i:03d}_after.jpg"
+                                post_path.write_bytes(post_bytes)
+                                step["next_screenshot"] = str(post_path.resolve())
                             if previous_progress is None:
                                 step["verification"] = {
                                     "status": "invalid",
