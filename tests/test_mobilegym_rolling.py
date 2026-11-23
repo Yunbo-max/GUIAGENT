@@ -151,3 +151,16 @@ def test_interim_verifier_only_uses_real_state():
     ))
     assert invalid["status"] == "invalid"
     assert invalid["progress_after"] is None
+
+
+def test_single_gpu_formal_config_matches_160_256():
+    from improving.mobilegym_feedback import validate
+    root = Path(__file__).resolve().parents[1]
+    cfg = json.loads((root / "configs/mobilegym/verified_rolling_4b_97gb.json").read_text())
+    assert validate(cfg) is cfg
+    assert cfg["study"]["train_task_limit"] == 160
+    assert cfg["study"]["test_task_limit"] == 256
+    assert cfg["study"]["round0_repeats"] == 8
+    assert cfg["mobilegym"]["official_rl_step_budgets"] is True
+    assert cfg["rolling"]["capture_step_verifier"] is True
+    assert cfg["model"]["device"] == "cuda:0"
