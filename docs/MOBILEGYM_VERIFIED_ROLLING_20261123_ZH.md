@@ -1,5 +1,39 @@
 # MobileGym: Verified Rolling Action Distillation (VRAD) — 2026-11-23
 
+**状态：已提交代码，CPU 合约测试通过；GPU 训练和 MobileGym 端到端正式运行尚未验证。**
+
+## 中文说明：我们现在真正要跑什么
+
+研究主线是 **Verified Rolling Action Distillation（VRAD）**，即在 MobileGym 训练任务中执行真实动作、读取每一步程序化 Verifier 的进度变化，再把后续实际执行得到的信息作为冻结 Teacher 的特权上下文，通过 Soft-KL 蒸馏到只看当前截图的 Student。
+
+- 输入与推理：Qwen3-VL-4B 输入当前截图、任务目标、历史动作；一次只执行一个可操作 Action，然后获取真实下一张截图。
+- 训练数据：160 个正式训练模板 × 每任务 8 条 Native 轨迹，计划采集 1280 条完整训练尝试。训练过程绝不使用 256 个测试任务的 Verifier。
+- 第一版软监督：当前动作保留完整 Action JSON；未来步只预测 Action Type（不伪造未来页面的坐标）。本版不是原生多预测头 MTP，也不训练 World Model。
+- 训练：单张约 97GB GPU，Qwen3-VL-4B BF16 + LoRA，Freeze Teacher、Reverse KL，未来 Action Type 辅以少量 CE；不用 GRPO。
+- 评测：256 个测试任务，全量 SR/PR/FC/USE、步数和资源记录。仓库提供按相同 Task Instance 配对的对比脚本。
+- SOTA 对照：MobileGym 官方 GRPO 有开源训练代码；MobileRL AdaGRPO 和 K²-Agent C-GRPO 仍需适配，不能把 AndroidWorld 成绩视作我们的 MobileGym 重跑结果。
+
+### Windows / Linux 运行指令
+
+```bash
+python -m pytest tests/test_mobilegym_rolling.py tests/test_mobilegym_eval_compare.py -q
+python scripts/run_mobilegym_verified_rolling.py --config configs/mobilegym/verified_rolling_4b_97gb.json plan
+python scripts/run_mobilegym_verified_rolling.py --config configs/mobilegym/verified_rolling_4b_97gb.json collect
+python scripts/run_mobilegym_verified_rolling.py --config configs/mobilegym/verified_rolling_4b_97gb.json prepare
+python scripts/run_mobilegym_verified_rolling.py --config configs/mobilegym/verified_rolling_4b_97gb.json train
+python scripts/run_mobilegym_verified_rolling.py --config configs/mobilegym/verified_rolling_4b_97gb.json eval
+```
+
+要做 Next-Action-only 消融，复用同一训练轨迹，只把配置改成 `configs/mobilegym/verified_next_action_ablation_4b_97gb.json`，执行 prepare、train、eval，不需要重复 collect。
+
+正式对照的命令：
+
+```bash
+python scripts/compare_mobilegym_evals.py --baseline /path/to/native_eval --candidate /path/to/verified_rolling_eval
+```
+
+---
+
 **Status: new code committed, CPU checks authored; GPU/native end-to-end execution
 NOT yet qualified on the user's 97GB host.** No results claimed. This is an
 opt-in separate branch and output root; old SPECTRUM / AndroidWorld studies
@@ -43,8 +77,8 @@ world model, and not a counterfactual branch experiment.
 
 - Pin: Purewhiter/mobilegym at 5fbd3f34be0e9780ae4b1e9d5089963ddbd05d38.
 - Qwen/Qwen3-VL-4B-Instruct at ebb281ec70b05090aa6165b016eac8ec08e71b17.
-- All **160 official train templates**, each with 4 native attempts: requested
-  640 train episodes (actual success and action lengths are measured).
+- All **160 official train templates**, each with 8 native attempts: requested
+  1,280 train episodes (actual success and action lengths are measured).
 - All **256 official held-out test templates**, one native episode each.
 - Use MobileGym RL per-difficulty step budgets 15/30/45/60 (+10 for grounded
   answer-sheet tasks); never cap all L3/L4 tasks at 30 steps.
