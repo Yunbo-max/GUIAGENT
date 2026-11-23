@@ -330,8 +330,22 @@ async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: 
                             previous_progress = initial_check["progress_after"]
                     obs = initial
                     terminated = False
-                    max_steps = min(cfg["study"]["max_steps"],
-                                    getattr(task, "max_steps", None) or cfg["study"]["max_steps"])
+                    if cfg["mobilegym"].get("official_rl_step_budgets", False):
+                        # Match the pinned MobileGym rLLM flow's per-difficulty
+                        # 15/30/45/60 budgets (+10 grounded answer-sheet steps).
+                        from bench_env.config import DIFFICULTY_MAX_STEPS
+                        max_steps = (
+                            getattr(task, "max_steps", None)
+                            or DIFFICULTY_MAX_STEPS.get(
+                                getattr(task, "difficulty", None),
+                                cfg["study"]["max_steps"],
+                            )
+                        )
+                        if getattr(task, "answer_fields", None):
+                            max_steps += 10
+                    else:
+                        max_steps = min(cfg["study"]["max_steps"],
+                                        getattr(task, "max_steps", None) or cfg["study"]["max_steps"])
                     for i in range(max_steps):
                         screenshot = directory / f"step_{i:03d}.jpg"
                         image = obs.get_screenshot_bytes()
