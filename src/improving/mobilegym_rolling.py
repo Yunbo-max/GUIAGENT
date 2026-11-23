@@ -184,6 +184,7 @@ def build_examples(
                     "verified_progress_gain": best_gain,
                     "loss_weight": loss_weight,
                     "feedback_end_step": best_index,
+                    "future_screenshot": steps[best_index].get("next_screenshot"),
                     "evidence_provenance": "actual_train_episode_interim_verifier",
                 })
                 counts[objective] += 1
