@@ -7,6 +7,7 @@ No GRPO, no future screenshot generation, no test state in training.
 from __future__ import annotations
 
 from collections import Counter
+from copy import deepcopy
 import hashlib
 import json
 import math
@@ -71,7 +72,16 @@ def _encode_pair(policy, row: dict) -> tuple[dict, dict, list[int]]:
     if not ids:
         raise ValueError("Empty response token IDs")
     student = policy.encode(row["messages"], ids)
-    teacher = policy.encode(row["messages"], ids, feedback=row["feedback"])
+    # Only the frozen hindsight teacher may see the ACTUAL future screen.
+    # The student always sees its current screenshot and earlier actions.
+    teacher_messages = deepcopy(row["messages"])
+    future_screen = row.get("future_screenshot")
+    if future_screen:
+        content = teacher_messages[-1]["content"]
+        if not isinstance(content, list):
+            raise ValueError("Future-screen teacher requires a multimodal user message")
+        content.append({"type": "image", "image": future_screen})
+    teacher = policy.encode(teacher_messages, ids, feedback=row["feedback"])
     return student, teacher, ids
 
 
