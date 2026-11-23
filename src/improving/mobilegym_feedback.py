@@ -314,6 +314,20 @@ async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: 
                     initial, params = await _setup_with_retry(env, task)
                     ep["instance_id"] = _digest([task.id, params, task.description])
                     ep["goal"] = task.description
+                    # Interim judge is TRAIN-ONLY and opt-in. The online actor
+                    # still receives screenshots and action history alone.
+                    capture_interim = (
+                        bool(cfg.get("rolling", {}).get("capture_step_verifier", False))
+                        and policy_name != "eval"
+                    )
+                    previous_progress = None
+                    if capture_interim:
+                        from improving.mobilegym_step_verify import verify_checkpoint
+                        initial_check = await verify_checkpoint(
+                            evaluator, task, initial, initial, env)
+                        ep["initial_verification"] = initial_check
+                        if initial_check["status"] == "verified":
+                            previous_progress = initial_check["progress_after"]
                     obs = initial
                     terminated = False
                     max_steps = min(cfg["study"]["max_steps"],
@@ -348,6 +362,21 @@ async def _collect_async(cfg, checkpoint: str, tasks: list, out: Path, repeats: 
                             break
                         step["done"] = bool(result.done)
                         step["feedback_kind"] = "action_executed"
+                        if capture_interim:
+                            if previous_progress is None:
+                                step["verification"] = {
+                                    "status": "invalid",
+                                    "reason": "initial_or_prior_interim_verifier_invalid",
+                                }
+                            else:
+                                interim = await verify_checkpoint(
+                                    evaluator, task, initial, result.observation,
+                                    env, previous_progress)
+                                step["verification"] = interim
+                                previous_progress = (
+                                    interim["progress_after"]
+                                    if interim["status"] == "verified" else None
+                                )
                         history.append(f"{kind}: {data}")
                         obs = result.observation
                         if result.done:
