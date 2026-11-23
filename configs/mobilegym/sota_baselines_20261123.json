@@ -1,0 +1,105 @@
+{
+  "schema": "mobilegym-sota-baselines-v1",
+  "date": "2026-11-23",
+  "benchmark": {
+    "name": "MobileGym",
+    "vendor_commit": "5fbd3f34be0e9780ae4b1e9d5089963ddbd05d38",
+    "train_templates": 160,
+    "test_templates": 256,
+    "policy_model": "Qwen/Qwen3-VL-4B-Instruct",
+    "model_revision": "ebb281ec70b05090aa6165b016eac8ec08e71b17",
+    "official_rl_step_budgets": true,
+    "split_rule": "Train templates only for any optimiser/teacher; test templates only for scoring",
+    "primary_metrics": [
+      "SR",
+      "PR",
+      "FC",
+      "OT",
+      "USE",
+      "wall_clock_s",
+      "actions_per_second",
+      "train_env_steps",
+      "gpu_hours"
+    ]
+  },
+  "runs": [
+    {
+      "id": "native_qwen4b",
+      "family": "flat_action",
+      "source": "https://github.com/Yunbo-max/GUIAGENT",
+      "status": "existing_code",
+      "method": "No optimisation",
+      "comparison_type": "matched_after_protocol_alignment"
+    },
+    {
+      "id": "feedback_sd",
+      "family": "self_distillation",
+      "source": "https://github.com/Yunbo-max/GUIAGENT",
+      "status": "existing_code",
+      "method": "On-prefix hindsight reverse KL",
+      "comparison_type": "matched_after_protocol_alignment"
+    },
+    {
+      "id": "mobilegym_grpo",
+      "family": "trajectory_rl",
+      "source": "https://github.com/Purewhiter/mobilegym/tree/main/mobilegym-rl",
+      "status": "external_training_available",
+      "method": "rLLM + verl GRPO, task progress shaped reward",
+      "comparison_type": "single_gpu_port_and_protocol_alignment_required",
+      "note": "Official launcher uses 2 GPUs; do not label single-GPU port validated."
+    },
+    {
+      "id": "mobilerl_adagrpo_adapted",
+      "family": "trajectory_rl",
+      "source": "https://github.com/THUDM/MobileRL",
+      "status": "training_adapter_not_implemented",
+      "method": "SPA + AdaPR + FCF adapted to MobileGym state rewards",
+      "comparison_type": "paper_inspired_adaptation",
+      "note": "Public repository primarily ships evaluation framework and model; no faithful MobileGym training reproduction is claimed."
+    },
+    {
+      "id": "k2_hierarchical_cgrpo_adapted",
+      "family": "hierarchical_rl",
+      "source": "https://github.com/k2-agent/k2-agent",
+      "status": "training_adapter_not_implemented",
+      "method": "Subgoal Planner + low-level curriculum GRPO on expert action steps",
+      "comparison_type": "paper_inspired_adaptation",
+      "note": "Official trainer is not openly released and 72B planner cannot be presumed single-97GB runnable."
+    },
+    {
+      "id": "gui_sd_opsd_adapted",
+      "family": "self_distillation",
+      "source": "https://github.com/zhangyan-ucas/GUI-SD-code",
+      "status": "external_training_available_requires_adaptation",
+      "method": "On-policy privileged teacher KL",
+      "comparison_type": "adapted_to_multistep_mobilegym",
+      "note": "Official grounding script uses 8 GPUs; adapt LoRA and held-out multi-step protocol before comparing."
+    },
+    {
+      "id": "verified_rolling_v1",
+      "family": "verified_horizon_soft_kl",
+      "source": "this_branch",
+      "status": "new_code_gpu_unverified",
+      "method": "Train-only step verification + next-action soft KL + horizon-conditioned future action-type soft KL",
+      "comparison_type": "proposed_method",
+      "note": "No native multihead MTP, no GRPO, no state world model; real GPU end-to-end validation pending."
+    },
+    {
+      "id": "verified_rolling_latent_world_ablation",
+      "family": "auxiliary_world_model",
+      "source": "planned",
+      "status": "not_implemented",
+      "method": "Action-conditioned next-screen latent target",
+      "comparison_type": "future_ablation"
+    },
+    {
+      "id": "gui_jepa_reference",
+      "family": "direct_action_ranking",
+      "source": "https://github.com/bcwang-sjtu/GUI-JEPA",
+      "status": "external_offline_code",
+      "method": "Accessibility tree candidate scoring",
+      "comparison_type": "separate_offline_reference_not_same_input",
+      "note": "Not comparable with screenshot-only MobileGym unless action candidates and visual information are matched."
+    }
+  ]
+}
